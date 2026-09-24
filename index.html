@@ -1075,9 +1075,32 @@ async function adminSubmitLogin(event){
   if(error)throw error;if(!data?.user)throw new Error('Utilisateur non retourné par Supabase.');
   adminStage('Vérification du rôle administrateur…');
   const admin=await getAdminContext(data.user);
-  currentAdminContext=admin;adminViewActive=true;
-  await openAdminDashboard(admin);closeAdminLogin();
- }catch(error){adminViewActive=false;showAdminError(error);}finally{authBusy=false;if(button){button.disabled=false;button.textContent='Se connecter';}}
+
+  // L’authentification et l’affichage du tableau de bord sont indépendants
+  // du chargement des données. Dès que le rôle admin est confirmé, on ouvre
+  // immédiatement l’administration et on ne renvoie JAMAIS vers l’accueil.
+  currentAdminContext=admin;
+  adminViewActive=true;
+  hidePrivatePages();
+  const page=document.getElementById('admin-page');
+  if(!page)throw new Error('Page administration absente.');
+  page.classList.add('active');
+  const identity=document.getElementById('adminIdentity');
+  if(identity)identity.textContent=`Administrateur — ${admin.profile.email||admin.user.email||''}`;
+  closeAdminLogin();
+  window.scrollTo({top:0,behavior:'instant'});
+
+  // Le chargement des données est secondaire : une erreur RLS, Realtime ou
+  // sur une table ne doit plus annuler la connexion administrateur.
+  refreshAdmin().catch(error=>console.error('[ADMIN DATA]',error));
+  try{await startRealtime(admin.user,true);}catch(error){console.error('[ADMIN REALTIME]',error);}
+ }catch(error){
+  // Une erreur d’authentification ou de rôle seulement doit laisser la page
+  // de connexion visible. Aucune redirection vers l’accueil ici.
+  adminViewActive=false;
+  currentAdminContext=null;
+  showAdminError(error);
+ }finally{authBusy=false;if(button){button.disabled=false;button.textContent='Se connecter';}}
  return false;
 }
 
@@ -1086,7 +1109,9 @@ async function openAdminDashboard(admin){
  currentAdminContext=admin;adminViewActive=true;hidePrivatePages();
  const page=document.getElementById('admin-page');if(!page)throw new Error('Page administration absente.');page.classList.add('active');
  const identity=document.getElementById('adminIdentity');if(identity)identity.textContent=`Administrateur — ${admin.profile.email||admin.user.email||''}`;
- await refreshAdmin();await startRealtime(admin.user,true);window.scrollTo({top:0,behavior:'smooth'});
+ window.scrollTo({top:0,behavior:'instant'});
+ try{await refreshAdmin();}catch(error){console.error('[ADMIN DATA]',error);}
+ try{await startRealtime(admin.user,true);}catch(error){console.error('[ADMIN REALTIME]',error);}
 }
 
 /* ---------- ADMIN TABS ---------- */
