@@ -152,6 +152,20 @@ main{padding-top:76px}
 .card i{font-size:1.4rem;color:var(--gold);margin-bottom:25px}
 .card h3{font-family:var(--serif);font-size:1.65rem;margin:0 0 10px}
 .card p{color:var(--muted);font-size:.88rem}
+.service-card{display:flex;flex-direction:column;min-height:270px;height:270px}
+.service-card .service-preview{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:4;overflow:hidden;margin:0;flex:1}
+.service-card .service-actions{margin-top:auto;display:flex;align-items:center;justify-content:space-between;gap:10px;padding-top:14px}
+.service-card .service-price{font-size:1.05rem;font-weight:800;color:var(--ink);white-space:nowrap}
+.service-card .service-details-btn{border:1px solid var(--gold);background:transparent;color:var(--ink);padding:8px 11px;border-radius:4px;font-weight:700;cursor:pointer}
+.service-card .service-details-btn:hover{background:var(--gold);color:#fff}
+.service-modal{position:fixed;inset:0;z-index:1500;display:none;align-items:center;justify-content:center;padding:18px;background:rgba(5,11,21,.78);backdrop-filter:blur(7px)}
+.service-modal.open{display:flex}
+.service-modal-box{position:relative;width:min(680px,94vw);max-height:86vh;overflow:auto;background:#fff;border:1px solid var(--line);padding:28px;box-shadow:0 24px 70px rgba(0,0,0,.3);border-radius:6px}
+.service-modal-close{position:absolute;right:12px;top:10px;width:38px;height:38px;border:1px solid var(--line);background:#fff;color:var(--ink);font-size:1.35rem;cursor:pointer;border-radius:4px}
+.service-modal-box h3{font-family:var(--serif);font-size:1.8rem;margin:0 45px 10px 0}
+.service-modal-box .modal-price{font-weight:800;font-size:1.15rem;color:var(--ink);margin:0 0 18px}
+.service-modal-box .modal-description{white-space:pre-wrap;color:var(--muted);line-height:1.75}
+@media(max-width:600px){.service-card{min-height:225px;height:225px}.service-card .service-preview{-webkit-line-clamp:3}.service-modal-box{padding:22px 18px}.service-modal-box h3{font-size:1.4rem}.service-modal-box .modal-description{font-size:.9rem;line-height:1.65}}
 
 .steps{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:1px;background:#28344a}
 .step{background:var(--navy2);padding:30px;min-height:220px}
@@ -682,6 +696,17 @@ footer{background:#050b15;color:#aeb8c8;padding:35px 0}
  </div>
 </section>
 
+<!-- MODAL DÉTAILS SERVICE -->
+<div class="service-modal" id="service-detail-modal" aria-hidden="true" role="dialog" aria-modal="true" aria-labelledby="service-detail-title">
+ <div class="service-modal-box">
+  <button class="service-modal-close" type="button" aria-label="Fermer" onclick="closeServiceModal()">&times;</button>
+  <div id="service-detail-icon" style="color:var(--gold);font-size:1.4rem;margin-bottom:10px"></div>
+  <h3 id="service-detail-title">Service</h3>
+  <div class="modal-price" id="service-detail-price">Sur devis</div>
+  <div class="modal-description" id="service-detail-description"></div>
+ </div>
+</div>
+
 <!-- ESPACE CLIENT -->
 <section class="page" id="dashboard-page">
  <div class="container dashboard">
@@ -800,7 +825,7 @@ footer{background:#050b15;color:#aeb8c8;padding:35px 0}
      <input type="hidden" id="edit-service-id">
      <div class="form-grid">
       <div class="field"><label>Nom</label><input id="service-name" required></div>
-      <div class="field"><label>Prix XOF</label><input id="service-price" type="number" min="0" step="1"></div>
+      <div class="field"><label>Prix en EUR</label><input id="service-price" type="number" min="0" step="1"></div>
       <div class="field full"><label>Description</label><textarea id="service-description"></textarea></div>
       <div class="field"><label>Icône Font Awesome</label><input id="service-icon" placeholder="fa-solid fa-shield-halved"></div>
       <div class="field"><label>Ordre</label><input id="service-order" type="number" value="0"></div>
@@ -856,7 +881,7 @@ footer{background:#050b15;color:#aeb8c8;padding:35px 0}
       <div class="field"><label>Service</label><input id="new-service-name" required placeholder="Ex. Audit de sécurité"></div>
       <div class="field"><label>Statut</label><select id="new-status"><option>Demande reçue</option><option>En attente</option><option>Paiement confirmé</option><option>En cours</option><option>Vérification</option><option>Terminé</option><option>Annulé</option></select></div>
       <div class="field"><label>Priorité</label><select id="new-priority"><option value="normal">Normale</option><option value="urgent">Urgente</option></select></div>
-      <div class="field"><label>Montant XOF</label><input id="new-amount" type="number" min="0" step="1"></div>
+      <div class="field"><label>Montant en EUR</label><input id="new-amount" type="number" min="0" step="1"></div>
       <div class="field"><label>Paiement</label><select id="new-payment"><option>Non payé</option><option>En attente</option><option>Partiel</option><option>Payé</option></select></div>
       <div class="field full"><label>Description</label><textarea id="new-description"></textarea></div>
       <div class="field full"><label>Note administration</label><textarea id="new-note"></textarea></div>
@@ -1245,6 +1270,19 @@ async function openAdminDashboard(admin){
 /* ---------- ADMIN TABS ---------- */
 function switchAdminTab(name){document.querySelectorAll('.admin-tabs button').forEach(b=>b.classList.toggle('active',b.dataset.adminTab===name));document.querySelectorAll('.admin-tab').forEach(t=>t.classList.toggle('active',t.id==='admin-tab-'+name));}
 
+function openServiceModalEncoded(encoded){try{openServiceModal(JSON.parse(decodeURIComponent(encoded)));}catch(e){}}
+function openServiceModal(service){
+ const modal=document.getElementById('service-detail-modal');if(!modal)return;
+ document.getElementById('service-detail-title').textContent=service?.name||'Service';
+ document.getElementById('service-detail-description').textContent=service?.description||'Aucune description disponible.';
+ document.getElementById('service-detail-price').textContent=service?.price==null?'Sur devis':formatEUR(service.price);
+ document.getElementById('service-detail-icon').innerHTML=service?.icon?`<i class="${esc(service.icon)}"></i>`:'';
+ modal.classList.add('open');modal.setAttribute('aria-hidden','false');document.body.style.overflow='hidden';
+}
+function closeServiceModal(){const modal=document.getElementById('service-detail-modal');if(!modal)return;modal.classList.remove('open');modal.setAttribute('aria-hidden','true');document.body.style.overflow='';}
+document.addEventListener('keydown',e=>{if(e.key==='Escape')closeServiceModal();});
+document.addEventListener('click',e=>{const m=document.getElementById('service-detail-modal');if(m&&e.target===m)closeServiceModal();});
+
 /* ---------- CLIENT ---------- */
 async function loadPublicServicesForClient(){
  const select=document.getElementById('client-request-service');if(!select)return;
@@ -1252,7 +1290,7 @@ async function loadPublicServicesForClient(){
  if(error){console.error(error);return;}
  select.innerHTML='<option value="">Choisir un service</option>'+(data||[]).map(x=>`<option value="${esc(x.name)}">${esc(x.name)}</option>`).join('');
 }
-function renderClientService(x){return `<div class="admin-service"><div class="admin-service-head"><div><strong>${esc(x.service_name||'Service')}</strong><br><small>Mis à jour : ${esc(formatDate(x.updated_at))}</small></div><span class="status">${esc(x.status||'Demande reçue')}</span></div><p>${x.description?esc(x.description):'Aucune description.'}</p><div class="admin-grid-3"><div><small>Priorité</small><br><strong>${esc(x.priority||'normal')}</strong></div><div><small>Paiement</small><br><strong>${esc(x.payment_status||'Non payé')}</strong></div><div><small>Montant</small><br><strong>${x.amount==null?'—':esc(Number(x.amount).toLocaleString('fr-FR'))+' XOF'}</strong></div></div>${x.admin_note?`<div class="app-message"><strong>Note de l’administration</strong><br>${esc(x.admin_note)}</div>`:''}</div>`;}
+function renderClientService(x){return `<div class="admin-service"><div class="admin-service-head"><div><strong>${esc(x.service_name||'Service')}</strong><br><small>Mis à jour : ${esc(formatDate(x.updated_at))}</small></div><span class="status">${esc(x.status||'Demande reçue')}</span></div><p>${x.description?esc(x.description):'Aucune description.'}</p><div class="admin-grid-3"><div><small>Priorité</small><br><strong>${esc(x.priority||'normal')}</strong></div><div><small>Paiement</small><br><strong>${esc(x.payment_status||'Non payé')}</strong></div><div><small>Montant</small><br><strong class="eur-price">${x.amount==null?'—':formatEUR(x.amount)}</strong></div></div>${x.admin_note?`<div class="app-message"><strong>Note de l’administration</strong><br>${esc(x.admin_note)}</div>`:''}</div>`;}
 async function loadClientServices(){const box=document.getElementById('client-service-list'),user=await getSessionUser();if(!box||!user)return;const {data,error}=await ensureSupabase().from('service_requests').select('id,service_name,description,status,priority,amount,payment_status,admin_note,updated_at').eq('client_id',user.id).order('updated_at',{ascending:false});if(error){box.innerHTML=`<div class="empty">${esc(adminErrorText(error))}</div>`;return;}box.innerHTML=(data||[]).length?(data||[]).map(renderClientService).join(''):'<div class="empty">Aucun dossier pour le moment.</div>';}
 async function createClientRequest(event){event?.preventDefault();try{const user=await getSessionUser();if(!user)throw new Error('Connectez-vous avant d’envoyer une demande.');const service_name=document.getElementById('client-request-service')?.value;const priority=document.getElementById('client-request-priority')?.value||'normal';const description=document.getElementById('client-request-description')?.value.trim();if(!service_name||!description)throw new Error('Choisissez un service et décrivez votre besoin.');const {error}=await ensureSupabase().from('service_requests').insert({client_id:user.id,service_name,description,priority,status:'Demande reçue',payment_status:'Non payé'});if(error)throw error;event.target.reset();setMessage('client-request-message','Votre demande a été envoyée. Le dossier est maintenant visible dans votre espace.',true);await loadClientServices();}catch(error){setMessage('client-request-message',adminErrorText(error));}}
 
@@ -1293,7 +1331,7 @@ async function updateRecoveredPassword(password,confirm){if(password!==confirm)r
 /* ---------- ADMIN : DOSSIERS ---------- */
 async function createServiceRequest(event){event?.preventDefault();try{if(!currentAdminContext)currentAdminContext=await requireAdmin();const email=normalizeEmail(document.getElementById('new-client-email')?.value);const service_name=document.getElementById('new-service-name')?.value.trim();const status=document.getElementById('new-status')?.value||'Demande reçue';const priority=document.getElementById('new-priority')?.value||'normal';const payment_status=document.getElementById('new-payment')?.value||'Non payé';const raw=document.getElementById('new-amount')?.value||'';const amount=raw===''?null:Number(raw);const description=document.getElementById('new-description')?.value.trim()||null;const admin_note=document.getElementById('new-note')?.value.trim()||null;if(!email||!service_name)throw new Error('Indiquez l’e-mail du client et le service.');if(amount!==null&&(!Number.isFinite(amount)||amount<0))throw new Error('Montant invalide.');const {data:profile,error:pe}=await ensureSupabase().from('profiles').select('id,email,role').ilike('email',email).maybeSingle();if(pe)throw pe;if(!profile)throw new Error('Aucun compte client trouvé avec cet e-mail.');if(profile.role==='admin')throw new Error('Ce compte est administrateur.');const {error}=await ensureSupabase().from('service_requests').insert({client_id:profile.id,service_name,description,status,priority,amount,payment_status,admin_note});if(error)throw error;event.target.reset();setMessage('admin-create-message','Dossier créé avec succès.',true);await loadAdminServices();}catch(error){setMessage('admin-create-message',adminErrorText(error));}}
 async function loadAdminServices(){const box=document.getElementById('adminServices');if(!box)return[];const {data,error}=await ensureSupabase().from('service_requests').select('id,client_id,service_name,description,status,priority,amount,payment_status,admin_note,client_note,created_at,updated_at').order('updated_at',{ascending:false});if(error){box.innerHTML=`<div class="empty">${esc(adminErrorText(error))}</div>`;throw error;}const rows=data||[];const ids=[...new Set(rows.map(x=>x.client_id).filter(Boolean))];let profiles=[];if(ids.length){const r=await ensureSupabase().from('profiles').select('id,email,full_name,phone').in('id',ids);if(!r.error)profiles=r.data||[];}const map=new Map(profiles.map(x=>[x.id,x]));box.innerHTML=rows.length?rows.map(x=>renderAdminService(x,map.get(x.client_id))).join(''):'<div class="empty">Aucun dossier.</div>';document.getElementById('stat-services')?.replaceChildren(document.createTextNode(String(rows.length)));document.getElementById('stat-progress')?.replaceChildren(document.createTextNode(String(rows.filter(x=>!['Terminé','Annulé'].includes(x.status)).length)));return rows;}
-function renderAdminService(x,client){return `<div class="admin-service"><div class="admin-service-head"><div><strong>${esc(x.service_name||'Service')}</strong><br><small>${esc(client?.full_name||'Client')}</small><br><small>${esc(client?.email||'')}</small><br><small>Créé : ${esc(formatDate(x.created_at))}</small></div><span class="status">${esc(x.status||'Demande reçue')}</span></div><p style="white-space:pre-wrap">${esc(x.description||'Aucune description')}</p><div class="admin-grid-3"><div class="field"><label>Statut</label><select id="st-${esc(x.id)}">${ADMIN_STATUSES.map(v=>`<option value="${esc(v)}" ${x.status===v?'selected':''}>${esc(v)}</option>`).join('')}</select></div><div class="field"><label>Paiement</label><select id="pay-${esc(x.id)}">${PAYMENT_STATUSES.map(v=>`<option value="${esc(v)}" ${x.payment_status===v?'selected':''}>${esc(v)}</option>`).join('')}</select></div><div class="field"><label>Montant XOF</label><input id="amount-${esc(x.id)}" type="number" min="0" step="1" value="${x.amount??''}"></div></div><div class="field" style="margin-top:10px"><label>Note pour le client</label><textarea id="note-${esc(x.id)}">${esc(x.admin_note||'')}</textarea></div><div class="admin-mini-actions"><button class="btn gold" type="button" onclick="updateService('${esc(x.id)}')">Enregistrer</button><button class="btn outline admin-danger" type="button" onclick="deleteService('${esc(x.id)}')">Supprimer</button></div><small>Mis à jour : ${esc(formatDate(x.updated_at))}</small></div>`;}
+function renderAdminService(x,client){return `<div class="admin-service"><div class="admin-service-head"><div><strong>${esc(x.service_name||'Service')}</strong><br><small>${esc(client?.full_name||'Client')}</small><br><small>${esc(client?.email||'')}</small><br><small>Créé : ${esc(formatDate(x.created_at))}</small></div><span class="status">${esc(x.status||'Demande reçue')}</span></div><p style="white-space:pre-wrap">${esc(x.description||'Aucune description')}</p><div class="admin-grid-3"><div class="field"><label>Statut</label><select id="st-${esc(x.id)}">${ADMIN_STATUSES.map(v=>`<option value="${esc(v)}" ${x.status===v?'selected':''}>${esc(v)}</option>`).join('')}</select></div><div class="field"><label>Paiement</label><select id="pay-${esc(x.id)}">${PAYMENT_STATUSES.map(v=>`<option value="${esc(v)}" ${x.payment_status===v?'selected':''}>${esc(v)}</option>`).join('')}</select></div><div class="field"><label>Montant en EUR</label><input id="amount-${esc(x.id)}" type="number" min="0" step="1" value="${x.amount??''}"></div></div><div class="field" style="margin-top:10px"><label>Note pour le client</label><textarea id="note-${esc(x.id)}">${esc(x.admin_note||'')}</textarea></div><div class="admin-mini-actions"><button class="btn gold" type="button" onclick="updateService('${esc(x.id)}')">Enregistrer</button><button class="btn outline admin-danger" type="button" onclick="deleteService('${esc(x.id)}')">Supprimer</button></div><small>Mis à jour : ${esc(formatDate(x.updated_at))}</small></div>`;}
 async function updateService(id){try{if(!currentAdminContext)currentAdminContext=await requireAdmin();const status=document.getElementById('st-'+id)?.value,payment_status=document.getElementById('pay-'+id)?.value,raw=document.getElementById('amount-'+id)?.value??'',amount=raw===''?null:Number(raw),admin_note=document.getElementById('note-'+id)?.value.trim()||null;if(amount!==null&&(!Number.isFinite(amount)||amount<0))throw new Error('Montant invalide.');const {error}=await ensureSupabase().from('service_requests').update({status,payment_status,amount,admin_note}).eq('id',id);if(error)throw error;await loadAdminServices();}catch(error){alert(adminErrorText(error));}}
 async function deleteService(id){if(!confirm('Supprimer définitivement ce dossier ?'))return;try{const {error}=await ensureSupabase().from('service_requests').delete().eq('id',id);if(error)throw error;await refreshAdmin();}catch(error){alert(adminErrorText(error));}}
 
@@ -1312,6 +1350,13 @@ async function loadSiteContent(){const box=document.getElementById('site-content
 async function saveSiteContent(event){event.preventDefault();try{const form=event.currentTarget,id=form.dataset.id;const fd=new FormData(form);const key=String(fd.get('content_key')||'').trim();const title=String(fd.get('title')||'').trim();const text=String(fd.get('text')||'');const payload={content_key:key,title,content:{text},image_url:String(fd.get('image_url')||'').trim()||null,button_text:String(fd.get('button_text')||'').trim()||null,button_url:String(fd.get('button_url')||'').trim()||null,updated_at:new Date().toISOString()};if(!key)throw new Error('La clé du contenu est obligatoire.');const {error}=await ensureSupabase().from('site_content').update(payload).eq('id',id);if(error)throw error;alert('Contenu enregistré.');await loadSiteContent();await applyPublicSiteContent();}catch(error){alert(adminErrorText(error));}}
 async function applyPublicSiteContent(){try{const {data,error}=await ensureSupabase().from('site_content').select('content_key,title,content,image_url,button_text,button_url');if(error)throw error;const byKey=new Map((data||[]).map(x=>[x.content_key,x]));const hero=byKey.get('hero');if(hero){const text=contentTextValue(hero.content);const heroText=document.querySelector('[data-i18n="heroText"]');if(heroText&&text)heroText.textContent=text;const heroTitle=document.querySelector('[data-i18n="heroTitle"]');if(heroTitle&&hero.title)heroTitle.innerHTML=esc(hero.title);const heroEl=document.querySelector('.hero');if(heroEl&&hero.image_url){heroEl.style.backgroundImage=`linear-gradient(100deg,rgba(8,15,35,.96),rgba(30,41,86,.91) 52%,rgba(10,18,38,.88)),url("${String(hero.image_url).replace(/"/g,'')}")`;}}const notice=byKey.get('notice');if(notice){const el=document.querySelector('[data-i18n="noticeText"]');const title=document.querySelector('[data-i18n="noticeTitle"]');const t=contentTextValue(notice.content);if(el&&t)el.textContent=t;if(title&&notice.title)title.textContent=notice.title;}const about=byKey.get('about');if(about){const el=document.querySelector('[data-i18n="contactText"]');const t=contentTextValue(about.content);if(el&&t)el.textContent=t;}}catch(error){console.warn('[PUBLIC CONTENT]',error);}}
 
+function formatEUR(value){
+ if(value===null||value===undefined||value==='')return '—';
+ const n=Number(value);
+ if(!Number.isFinite(n))return String(value);
+ return new Intl.NumberFormat('fr-FR',{style:'currency',currency:'EUR',minimumFractionDigits:2,maximumFractionDigits:2}).format(n);
+}
+
 /* ---------- PUBLIC DYNAMIC CONTENT ---------- */
 async function loadPublicServices(){
  const box=document.getElementById('public-services-grid');if(!box)return;
@@ -1319,7 +1364,7 @@ async function loadPublicServices(){
   const {data,error}=await ensureSupabase().from('services').select('id,name,description,price,image_url,icon,display_order,is_active').eq('is_active',true).order('display_order',{ascending:true});
   if(error)throw error;
   const rows=data||[];
-  box.innerHTML=rows.length?rows.map(x=>`<article class="card">${x.icon?`<i class="${esc(x.icon)}"></i>`:''}<h3>${esc(x.name||'Service')}</h3><p>${esc(x.description||'')}</p>${x.price!=null?`<strong style="display:block;margin-top:16px">${esc(Number(x.price).toLocaleString('fr-FR'))} XOF</strong>`:''}</article>`).join(''):'<div class="empty" style="grid-column:1/-1">Aucun service publié pour le moment.</div>';
+  box.innerHTML=rows.length?rows.map(x=>{const desc=String(x.description||'');const excerpt=desc.length>170?desc.slice(0,170).trim()+'…':desc;return `<article class="card service-card">${x.icon?`<i class="${esc(x.icon)}"></i>`:''}<h3>${esc(x.name||'Service')}</h3><p class="service-preview">${esc(excerpt||'Découvrez ce service et ses modalités.')}</p><div class="service-actions"><span class="service-price">${x.price!=null?formatEUR(x.price):'Sur devis'}</span><button class="service-details-btn" type="button" onclick="openServiceModalEncoded('${encodeURIComponent(JSON.stringify({name:x.name||'Service',description:desc,price:x.price,icon:x.icon||''}))}')">Voir les détails</button></div></article>`}).join(''):'<div class="empty" style="grid-column:1/-1">Aucun service publié pour le moment.</div>';
  }catch(error){box.innerHTML=`<div class="empty" style="grid-column:1/-1">${esc(adminErrorText(error))}</div>`;}
 }
 async function loadPublicMethod(){
@@ -1344,7 +1389,7 @@ async function loadPublicGallery(){
 /* ---------- ADMIN : SERVICES ---------- */
 function resetServiceEditor(){document.getElementById('admin-service-form')?.reset();document.getElementById('edit-service-id').value='';document.getElementById('service-editor-message').textContent='';}
 function editService(encoded){const x=typeof encoded==='string'?JSON.parse(decodeURIComponent(encoded)):encoded;document.getElementById('edit-service-id').value=x.id;document.getElementById('service-name').value=x.name||'';document.getElementById('service-price').value=x.price??'';document.getElementById('service-description').value=x.description||'';document.getElementById('service-icon').value=x.icon||'';document.getElementById('service-order').value=x.display_order??0;document.getElementById('service-image').value=x.image_url||'';document.getElementById('service-active').value=String(x.is_active!==false);window.scrollTo({top:document.getElementById('admin-tab-services').offsetTop,behavior:'smooth'});}
-async function loadPublicServicesAdmin(){const box=document.getElementById('public-services-admin');if(!box)return;const {data,error}=await ensureSupabase().from('services').select('id,name,description,price,image_url,icon,display_order,is_active,created_at,updated_at').order('display_order',{ascending:true});if(error){box.innerHTML=`<div class="empty">${esc(adminErrorText(error))}</div>`;throw error;}const rows=data||[];document.getElementById('stat-public-services')?.replaceChildren(document.createTextNode(String(rows.filter(x=>x.is_active!==false).length)));box.innerHTML=rows.length?`<div class="admin-list">${rows.map(x=>`<div class="admin-service"><strong>${esc(x.name||'Service')}</strong><br><small>${x.price==null?'':esc(Number(x.price).toLocaleString('fr-FR'))+' XOF'}</small><p>${esc(x.description||'')}</p><span class="status">${x.is_active===false?'Inactif':'Actif'}</span><div class="admin-mini-actions"><button class="btn outline" type="button" onclick='editService("${encodeURIComponent(JSON.stringify(x))}")'>Modifier</button><button class="btn outline admin-danger" type="button" onclick="deletePublicService('${esc(x.id)}')">Supprimer</button></div></div>`).join('')}</div>`:'<div class="empty">Aucun service.</div>';}
+async function loadPublicServicesAdmin(){const box=document.getElementById('public-services-admin');if(!box)return;const {data,error}=await ensureSupabase().from('services').select('id,name,description,price,image_url,icon,display_order,is_active,created_at,updated_at').order('display_order',{ascending:true});if(error){box.innerHTML=`<div class="empty">${esc(adminErrorText(error))}</div>`;throw error;}const rows=data||[];document.getElementById('stat-public-services')?.replaceChildren(document.createTextNode(String(rows.filter(x=>x.is_active!==false).length)));box.innerHTML=rows.length?`<div class="admin-list">${rows.map(x=>`<div class="admin-service"><strong>${esc(x.name||'Service')}</strong><br><small>${x.price==null?'':esc(Number(x.price).toLocaleString('fr-FR'))+' EUR'}</small><p>${esc(x.description||'')}</p><span class="status">${x.is_active===false?'Inactif':'Actif'}</span><div class="admin-mini-actions"><button class="btn outline" type="button" onclick='editService("${encodeURIComponent(JSON.stringify(x))}")'>Modifier</button><button class="btn outline admin-danger" type="button" onclick="deletePublicService('${esc(x.id)}')">Supprimer</button></div></div>`).join('')}</div>`:'<div class="empty">Aucun service.</div>';}
 async function savePublicService(event){event.preventDefault();try{const id=document.getElementById('edit-service-id').value||null;const raw=document.getElementById('service-price').value;const price=raw===''?null:Number(raw);if(price!==null&&(!Number.isFinite(price)||price<0))throw new Error('Prix invalide.');const payload={name:document.getElementById('service-name').value.trim(),description:document.getElementById('service-description').value.trim()||null,price,image_url:document.getElementById('service-image').value.trim()||null,icon:document.getElementById('service-icon').value.trim()||null,display_order:Number(document.getElementById('service-order').value||0),is_active:document.getElementById('service-active').value==='true',updated_at:new Date().toISOString()};if(!payload.name)throw new Error('Le nom est obligatoire.');let r=id?await ensureSupabase().from('services').update(payload).eq('id',id):await ensureSupabase().from('services').insert(payload);if(r.error)throw r.error;setMessage('service-editor-message','Service enregistré.',true);resetServiceEditor();await loadPublicServicesAdmin();await loadPublicServicesForClient();}catch(error){setMessage('service-editor-message',adminErrorText(error));}}
 async function deletePublicService(id){if(!confirm('Supprimer ce service ?'))return;try{const {error}=await ensureSupabase().from('services').delete().eq('id',id);if(error)throw error;await loadPublicServicesAdmin();await loadPublicServicesForClient();}catch(error){alert(adminErrorText(error));}}
 
@@ -1561,7 +1606,7 @@ if (authorized) {
     const replacements = [
       ["Prix XOF","Prix en EUR"],
       ["Montant XOF","Montant en EUR"],
-      ["Montant","Montant en EUR"]
+      ["Montant XOF","Montant en EUR"]
     ];
     document.querySelectorAll("label").forEach(el=>{
       replacements.forEach(([a,b])=>{
