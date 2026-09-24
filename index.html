@@ -940,15 +940,39 @@ function applyLanguage(lang){
 }
 
 function go(page){
- // Une session administrateur reste impérativement dans l'administration.
- // Aucun clic de navigation, logo ou autre appel indirect ne peut renvoyer
- // l'administrateur vers l'accueil. Seule la déconnexion désactive ce verrou.
- if(adminViewActive && page !== "admin") return false;
+ // VERROU ADMIN : tant que la session administrateur est active,
+ // aucune navigation publique (accueil, services, contact, connexion, etc.)
+ // ne peut remplacer le tableau de bord. Seule signOut() lève ce verrou.
+ if(adminViewActive){
+   if(page !== "admin") {
+     document.getElementById("navlinks")?.classList.remove("open");
+     const adminPage=document.getElementById("admin-page");
+     document.querySelectorAll(".page").forEach(x=>x.classList.remove("active"));
+     adminPage?.classList.add("active");
+     window.scrollTo({top:0,behavior:"smooth"});
+     return false;
+   }
+ }
  document.querySelectorAll(".page").forEach(x=>x.classList.remove("active"));
  const el=document.getElementById(page+"-page");
- if(el)el.classList.add("active");
+ if(!el) return false;
+ el.classList.add("active");
  window.scrollTo({top:0,behavior:"smooth"});
  document.getElementById("navlinks")?.classList.remove("open");
+ return true;
+}
+
+function enterAdminDashboard(admin){
+ if(!admin?.user?.id || admin.profile?.role !== "admin") return false;
+ currentAdminContext=admin;
+ adminViewActive=true;
+ hidePrivatePages();
+ const page=document.getElementById("admin-page");
+ if(!page) return false;
+ document.querySelectorAll(".page").forEach(x=>x.classList.remove("active"));
+ page.classList.add("active");
+ document.getElementById("navlinks")?.classList.remove("open");
+ window.scrollTo({top:0,behavior:"smooth"});
  return true;
 }
 
@@ -1082,11 +1106,14 @@ async function adminSubmitLogin(event){
 }
 
 async function openAdminDashboard(admin){
- admin=admin||currentAdminContext;if(!admin?.user?.id||admin.profile?.role!=='admin')throw new Error('Contexte administrateur invalide.');
- currentAdminContext=admin;adminViewActive=true;hidePrivatePages();
- const page=document.getElementById('admin-page');if(!page)throw new Error('Page administration absente.');page.classList.add('active');
- const identity=document.getElementById('adminIdentity');if(identity)identity.textContent=`Administrateur — ${admin.profile.email||admin.user.email||''}`;
- await refreshAdmin();await startRealtime(admin.user,true);window.scrollTo({top:0,behavior:'smooth'});
+ admin=admin||currentAdminContext;
+ if(!admin?.user?.id || admin.profile?.role!=='admin') throw new Error('Contexte administrateur invalide.');
+ if(!enterAdminDashboard(admin)) throw new Error('Page administration absente.');
+ const identity=document.getElementById('adminIdentity');
+ if(identity) identity.textContent=`Administrateur — ${admin.profile.email||admin.user.email||''}`;
+ await refreshAdmin();
+ await startRealtime(admin.user,true);
+ window.scrollTo({top:0,behavior:'smooth'});
 }
 
 /* ---------- ADMIN TABS ---------- */
@@ -1109,7 +1136,24 @@ async function loadClientMessages(){const box=document.getElementById('client-me
 async function sendClientMessage(event){event?.preventDefault();try{const user=await getSessionUser();const message=document.getElementById('client-message-input')?.value.trim();if(!user||!message)throw new Error('Écrivez un message.');const {error}=await ensureSupabase().from('client_messages').insert({client_id:user.id,sender_id:user.id,message,is_read:false});if(error)throw error;event.target.reset();await loadClientMessages();}catch(error){alert(adminErrorText(error));}}
 
 async function showClientDashboard(user){adminViewActive=false;hidePrivatePages();document.getElementById('dashboard-page')?.classList.add('active');const profile=await getMyProfile(user);const p=document.querySelector('#dashboard-page .profile-summary');if(p)p.textContent=`${profile?.full_name||user.user_metadata?.full_name||'Client'} — ${profile?.email||user.email||''}${profile?.phone?' — '+profile.phone:''}`;await loadPublicServicesForClient();await loadClientServices();await loadClientMessages();await startRealtime(user,false);window.scrollTo({top:0,behavior:'smooth'});}
-async function signInClient(email,password){if(authBusy)return;authBusy=true;try{const {data,error}=await ensureSupabase().auth.signInWithPassword({email:normalizeEmail(email),password});if(error)throw error;const profile=await getMyProfile(data.user);if(profile?.role==='admin')throw new Error('Ce compte est administrateur. Utilisez les 3 clics sur le logo pour ouvrir l’administration.');await showClientDashboard(data.user);}catch(error){try{if(/administrateur/i.test(String(error?.message||'')))await ensureSupabase().auth.signOut();}catch(_){}alert(adminErrorText(error));}finally{authBusy=false;}}
+async function signInClient(email,password){
+ if(authBusy)return;
+ authBusy=true;
+ try{
+   const {data,error}=await ensureSupabase().auth.signInWithPassword({email:normalizeEmail(email),password});
+   if(error)throw error;
+   if(!data?.user)throw new Error('Utilisateur non retourné par Supabase.');
+   const profile=await getMyProfile(data.user);
+   if(profile?.role==='admin'){
+     const admin=await getAdminContext(data.user);
+     currentAdminContext=admin;
+     await openAdminDashboard(admin);
+   }else{
+     await showClientDashboard(data.user);
+   }
+ }catch(error){alert(adminErrorText(error));}
+ finally{authBusy=false;}
+}
 async function registerClient(name,email,phone,password,confirm){if(!name.trim())return alert('Indiquez votre nom et prénom.');if(password!==confirm)return alert('Les mots de passe ne correspondent pas.');if(password.length<6)return alert('Le mot de passe doit contenir au moins 6 caractères.');if(authBusy)return;authBusy=true;try{const {data,error}=await ensureSupabase().auth.signUp({email:normalizeEmail(email),password,options:{data:{full_name:name.trim(),phone:phone.trim()}}});if(error)throw error;if(data.session&&data.user)await showClientDashboard(data.user);else{alert('Compte créé. Consultez votre e-mail pour confirmer votre adresse.');go('login');}}catch(error){alert(adminErrorText(error));}finally{authBusy=false;}}
 async function sendResetEmail(email){email=normalizeEmail(email);if(!email)return alert('Saisissez votre adresse e-mail.');try{const {error}=await ensureSupabase().auth.resetPasswordForEmail(email,{redirectTo:window.location.origin+window.location.pathname});if(error)throw error;alert('Le lien de réinitialisation a été envoyé.');go('login');}catch(error){alert(adminErrorText(error));}}
 async function updateRecoveredPassword(password,confirm){if(password!==confirm)return alert('Les mots de passe ne correspondent pas.');if(password.length<6)return alert('Le mot de passe doit contenir au moins 6 caractères.');try{const {error}=await ensureSupabase().auth.updateUser({password});if(error)throw error;passwordRecoveryActive=false;alert('Mot de passe modifié.');await signOut();}catch(error){alert(adminErrorText(error));}}
@@ -1198,7 +1242,21 @@ async function startRealtime(user,isAdmin){const sb=ensureSupabase();if(serviceC
  let mc=sb.channel(`client-messages-${user.id}-${isAdmin?'admin':'client'}`).on('postgres_changes',{event:'*',schema:'public',table:'client_messages',...(isAdmin?{}:{filter:`client_id=eq.${user.id}`})},()=>{if(isAdmin){loadAdminClientMessages(selectedAdminClientId).catch(console.error);loadAdminClientMessageCount().catch(console.error);}else loadClientMessages().catch(console.error);});messageChannel=mc;mc.subscribe();}
 
 /* ---------- SESSION / LOGOUT ---------- */
-async function signOut(){adminViewActive=false;currentAdminContext=null;passwordRecoveryActive=false;clearTimeout(adminRefreshTimer);if(serviceChannel){try{await ensureSupabase().removeChannel(serviceChannel);}catch(_){}}if(messageChannel){try{await ensureSupabase().removeChannel(messageChannel);}catch(_){}}serviceChannel=null;messageChannel=null;try{await ensureSupabase().auth.signOut();}catch(error){console.error(error);}hidePrivatePages();go('home');}
+async function signOut(){
+ // On lève le verrou AVANT la navigation publique.
+ adminViewActive=false;
+ currentAdminContext=null;
+ passwordRecoveryActive=false;
+ clearTimeout(adminRefreshTimer);
+ if(serviceChannel){try{await ensureSupabase().removeChannel(serviceChannel);}catch(_){}}
+ if(messageChannel){try{await ensureSupabase().removeChannel(messageChannel);}catch(_){}}
+ serviceChannel=null;
+ messageChannel=null;
+ try{await ensureSupabase().auth.signOut();}catch(error){console.error(error);}
+ closeAdminLogin();
+ hidePrivatePages();
+ go('home');
+}
 async function initializeSession(){try{const user=await getSessionUser();if(!user)return;const profile=await getMyProfile(user);if(profile?.role==='admin'){const admin=await getAdminContext(user);currentAdminContext=admin;await openAdminDashboard(admin);}else{await showClientDashboard(user);}}catch(error){console.error('[SESSION INIT]',error);}}
 
 /* ---------- DOM ---------- */
