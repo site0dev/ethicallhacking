@@ -1126,9 +1126,6 @@ async function requireAdmin(){return getAdminContext();}
 
 async function adminSubmitLogin(event){
  event?.preventDefault();if(authBusy)return false;
- clientViewActive=false;
- adminViewActive=false;
- updateAuthUI();
  const email=normalizeEmail(document.getElementById('admin-email')?.value),password=document.getElementById('admin-password')?.value||'';
  const button=document.getElementById('admin-login-submit');if(!email||!password){showAdminError(new Error('Veuillez saisir l’adresse e-mail et le mot de passe.'));return false;}
  authBusy=true;if(button){button.disabled=true;button.textContent='Connexion…';}
@@ -1138,18 +1135,9 @@ async function adminSubmitLogin(event){
   if(error)throw error;if(!data?.user)throw new Error('Utilisateur non retourné par le service.');
   adminStage('Vérification du rôle administrateur…');
   const admin=await getAdminContext(data.user);
-  currentAdminContext=admin;
-  adminViewActive=true;
-  clientViewActive=false;
-  await openAdminDashboard(admin);
-  closeAdminLogin();
-  updateAuthUI();
- }catch(error){
-  adminViewActive=false;
-  clientViewActive=false;
-  updateAuthUI();
-  showAdminError(error);
- }finally{authBusy=false;if(button){button.disabled=false;button.textContent='Se connecter';}}
+  currentAdminContext=admin;adminViewActive=true;
+  await openAdminDashboard(admin);closeAdminLogin();
+ }catch(error){adminViewActive=false;showAdminError(error);}finally{authBusy=false;if(button){button.disabled=false;button.textContent='Se connecter';}}
  return false;
 }
 
