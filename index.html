@@ -940,11 +940,16 @@ function applyLanguage(lang){
 }
 
 function go(page){
+ // Une session administrateur reste impérativement dans l'administration.
+ // Aucun clic de navigation, logo ou autre appel indirect ne peut renvoyer
+ // l'administrateur vers l'accueil. Seule la déconnexion désactive ce verrou.
+ if(adminViewActive && page !== "admin") return false;
  document.querySelectorAll(".page").forEach(x=>x.classList.remove("active"));
  const el=document.getElementById(page+"-page");
  if(el)el.classList.add("active");
  window.scrollTo({top:0,behavior:"smooth"});
  document.getElementById("navlinks")?.classList.remove("open");
+ return true;
 }
 
 document.getElementById("lang-btn")?.addEventListener("change",e=>applyLanguage(e.target.value));
