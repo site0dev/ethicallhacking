@@ -391,6 +391,9 @@ footer{background:#050b15;color:#aeb8c8;padding:35px 0}
 }
 </style>
 
+<style id="auth-functionality-fix">
+#client-message-status,#admin-client-message-status,#contact-submit-status{margin:10px 0 0;white-space:pre-wrap}
+</style>
 </head>
 
 <body>
@@ -1237,7 +1240,9 @@ document.getElementById("contact-form")?.addEventListener("submit",async e=>{
    const msg=/contact_messages|schema cache|relation/i.test(raw)
      ? (currentLanguage==='de'?'Der Kontaktservice ist derzeit nicht konfiguriert.':currentLanguage==='it'?'Il servizio di contatto non è attualmente configurato.':'Le service de contact est temporairement indisponible. Veuillez réessayer plus tard.')
      : (currentLanguage==='de'?'Nachricht konnte nicht gesendet werden.':currentLanguage==='it'?'Impossibile inviare il messaggio.':'Impossible d’envoyer le message. Vérifiez votre connexion.');
-   alert(msg);
+   let status=document.getElementById('contact-submit-status');
+   if(!status){status=document.createElement('p');status.id='contact-submit-status';status.className='muted';button?.parentElement?.appendChild(status);}
+   status.textContent=msg+(raw&&raw!==msg?' — '+raw:'');
  }finally{
    if(button){button.disabled=false;button.textContent=translations[currentLanguage]?.send||'Envoyer';}
  }
@@ -1285,6 +1290,21 @@ function clientErrorText(error){
  if(/Contexte administrateur invalide|Page administration absente/i.test(raw))return 'L’espace d’administration n’a pas pu être ouvert. Veuillez réessayer.';
  return 'Impossible de se connecter à l’administration. Vérifiez les identifiants puis réessayez.';
 }
+function adminErrorText(error){
+ const raw=String(error?.message||error||'').trim();
+ const code=String(error?.code||'').trim();
+ if(!raw)return 'Une erreur est survenue dans l’administration.';
+ if(/row-level security|permission denied|not authorized|42501|PGRST301|JWT/i.test(raw))
+   return 'Supabase refuse cette opération : vérifiez les politiques RLS et les droits administrateur.';
+ if(/relation .* does not exist|schema cache|PGRST205|PGRST204/i.test(raw))
+   return 'La table ou la colonne demandée n’existe pas dans Supabase, ou le schéma n’est pas à jour.';
+ if(/invalid input syntax|violates .* constraint|2350|22P02/i.test(raw))
+   return 'Les données envoyées ne correspondent pas à la structure de la base Supabase.';
+ if(/Failed to fetch|NetworkError|fetch/i.test(raw))
+   return 'Supabase est inaccessible depuis le navigateur. Vérifiez la connexion et l’URL du projet.';
+ return raw + (code ? ` (code ${code})` : '');
+}
+
 function withTimeout(promise,ms,message){let timer;return Promise.race([promise,new Promise((_,reject)=>timer=setTimeout(()=>reject(new Error(message)),ms))]).finally(()=>clearTimeout(timer));}
 function setMessage(id,text,ok=false){const el=document.getElementById(id);if(!el)return;el.textContent=text||'';el.className='muted '+(ok?'admin-success':'');}
 function hidePrivatePages(){
@@ -1347,7 +1367,23 @@ function adminTripleClick(event){event?.preventDefault();event?.stopPropagation(
 
 async function getSessionUser(){const {data,error}=await ensureSupabase().auth.getUser();if(error)throw error;return data?.user||null;}
 async function getMyProfile(user){user=user||await getSessionUser();if(!user)return null;const {data,error}=await ensureSupabase().from('profiles').select('id,email,full_name,phone,role,created_at').eq('id',user.id).maybeSingle();if(error)throw error;return data||null;}
-async function getAdminContext(user){user=user||await getSessionUser();if(!user)throw new Error('Aucune session active.');const {data:profile,error}=await withTimeout(ensureSupabase().from('profiles').select('id,email,full_name,phone,role,created_at').eq('id',user.id).maybeSingle(),10000,'La vérification du profil a expiré.');if(error)throw error;if(!profile)throw new Error('Aucun profil public ne correspond à ce compte.');if(profile.role!=='admin')throw new Error('Ce compte n’a pas le rôle administrateur.');return {user,profile};}
+async function getAdminContext(user){
+ user=user||await getSessionUser();
+ if(!user)throw new Error('Aucune session active.');
+ const {data:profile,error}=await withTimeout(
+  ensureSupabase().from('profiles').select('id,email,full_name,phone,role,created_at').eq('id',user.id).maybeSingle(),
+  10000,
+  'La vérification du profil a expiré.'
+ );
+ if(error){
+  const e=new Error(`Impossible de lire le profil administrateur : ${error.message||error}`);
+  e.code=error.code;e.details=error.details;e.hint=error.hint;
+  throw e;
+ }
+ if(!profile)throw new Error('Aucun profil public ne correspond à ce compte. Créez le profil de cet utilisateur et attribuez-lui role = admin.');
+ if(String(profile.role||'').toLowerCase()!=='admin')throw new Error(`Ce compte existe mais son rôle est « ${profile.role||'non défini'} », pas « admin ».`);
+ return {user,profile};
+}
 async function requireAdmin(){return getAdminContext();}
 
 async function adminSubmitLogin(event){
@@ -1437,7 +1473,36 @@ async function createClientRequest(event){event?.preventDefault();try{const user
 /* ---------- CLIENT MESSAGES ---------- */
 function renderMessage(x,currentUserId){const isAdmin=x.sender_id!==currentUserId;return `<div class="client-message ${isAdmin?'admin':'client'}"><small>${isAdmin?'Administration':'Vous'} · ${esc(formatDate(x.created_at))}</small><div style="white-space:pre-wrap">${esc(x.message||'')}</div></div>`;}
 async function loadClientMessages(){const box=document.getElementById('client-message-list'),user=await getSessionUser();if(!box||!user)return;const {data,error}=await ensureSupabase().from('client_messages').select('id,client_id,sender_id,message,is_read,created_at').eq('client_id',user.id).order('created_at',{ascending:true});if(error){box.innerHTML=`<div class="empty">${esc(clientErrorText(error))}</div>`;return;}box.innerHTML=(data||[]).length?data.map(x=>renderMessage(x,user.id)).join(''):'<div class="empty">Aucun message.</div>';box.scrollTop=box.scrollHeight;}
-async function sendClientMessage(event){event?.preventDefault();try{const user=await getSessionUser();const message=document.getElementById('client-message-input')?.value.trim();if(!user||!message)throw new Error('Écrivez un message.');const {error}=await ensureSupabase().from('client_messages').insert({client_id:user.id,sender_id:user.id,message,is_read:false});if(error)throw error;event.target.reset();await loadClientMessages();}catch(error){alert(clientErrorText(error));}}
+async function sendClientMessage(event){
+ event?.preventDefault();
+ const form=event?.currentTarget||event?.target;
+ const button=form?.querySelector('button[type="submit"]');
+ const input=document.getElementById('client-message-input');
+ let status=document.getElementById('client-message-status');
+ if(!status && form){status=document.createElement('p');status.id='client-message-status';status.className='muted';form.appendChild(status);}
+ const setStatus=(msg,ok=false)=>{if(status){status.textContent=msg;status.className='muted '+(ok?'admin-success':'');}};
+ if(button){button.disabled=true;button.dataset.oldText=button.textContent;button.textContent='Envoi…';}
+ try{
+  const user=await getSessionUser();
+  const message=input?.value.trim()||'';
+  if(!user)throw new Error('Votre session client n’est plus active. Reconnectez-vous.');
+  if(!message)throw new Error('Écrivez un message avant de l’envoyer.');
+  const {error}=await withTimeout(
+   ensureSupabase().from('client_messages').insert({client_id:user.id,sender_id:user.id,message,is_read:false}),
+   12000,
+   'Le serveur n’a pas répondu à l’envoi du message.'
+  );
+  if(error)throw error;
+  form?.reset();
+  setStatus('Message envoyé à l’administration.',true);
+  await loadClientMessages();
+ }catch(error){
+  console.error('[CLIENT MESSAGE]',error);
+  setStatus(adminErrorText(error));
+ }finally{
+  if(button){button.disabled=false;button.textContent=button.dataset.oldText||'Envoyer le message';}
+ }
+}
 
 async function refreshClientDashboard(){
  try{
@@ -1495,7 +1560,35 @@ async function loadAdminClients(){const box=document.getElementById('adminClient
 async function loadAdminMessages(){const box=document.getElementById('adminMessages');if(!box)return[];const {data,error}=await ensureSupabase().from('contact_messages').select('id,name,email,subject,message,is_read,created_at').order('created_at',{ascending:false});if(error){box.innerHTML=`<div class="empty">${esc(adminErrorText(error))}</div>`;throw error;}const rows=data||[];document.getElementById('stat-messages')?.replaceChildren(document.createTextNode(String(rows.length)));box.innerHTML=rows.length?rows.map(x=>`<div class="admin-service"><div class="admin-service-head"><div><strong>${esc(x.subject||'Message')}</strong><br><small>${esc(x.name||'')} — ${esc(x.email||'')}</small></div><small>${esc(formatDate(x.created_at))}</small></div><p style="white-space:pre-wrap">${esc(x.message||'')}</p></div>`).join(''):'<div class="empty">Aucun message.</div>';return rows;}
 async function loadAdminClientMessages(clientId){const box=document.getElementById('admin-client-message-list');if(!box)return;if(!clientId){box.innerHTML='<div class="empty">Sélectionnez un client.</div>';return;}const {data,error}=await ensureSupabase().from('client_messages').select('id,client_id,sender_id,message,is_read,created_at').eq('client_id',clientId).order('created_at',{ascending:true});if(error){box.innerHTML=`<div class="empty">${esc(adminErrorText(error))}</div>`;return;}box.innerHTML=(data||[]).length?data.map(x=>renderMessage(x,currentAdminContext?.user?.id)).join(''):'<div class="empty">Aucun message.</div>';box.scrollTop=box.scrollHeight;}
 function selectAdminClient(id){selectedAdminClientId=id;const sel=document.getElementById('admin-message-client');if(sel)sel.value=id;switchAdminTab('messages');loadAdminClientMessages(id);}
-async function sendAdminClientMessage(event){event?.preventDefault();try{const clientId=document.getElementById('admin-message-client')?.value||selectedAdminClientId;const message=document.getElementById('admin-client-message-input')?.value.trim();if(!clientId||!message)throw new Error('Choisissez un client et écrivez un message.');const {error}=await ensureSupabase().from('client_messages').insert({client_id:clientId,sender_id:currentAdminContext.user.id,message,is_read:false});if(error)throw error;event.target.reset();await loadAdminClientMessages(clientId);}catch(error){alert(adminErrorText(error));}}
+async function sendAdminClientMessage(event){
+ event?.preventDefault();
+ const form=event?.currentTarget||event?.target;
+ const button=form?.querySelector('button[type="submit"]');
+ let status=document.getElementById('admin-client-message-status');
+ if(!status && form){status=document.createElement('p');status.id='admin-client-message-status';status.className='muted';form.appendChild(status);}
+ const setStatus=(msg,ok=false)=>{if(status){status.textContent=msg;status.className='muted '+(ok?'admin-success':'');}};
+ if(button){button.disabled=true;button.dataset.oldText=button.textContent;button.textContent='Envoi…';}
+ try{
+  if(!currentAdminContext)currentAdminContext=await requireAdmin();
+  const clientId=document.getElementById('admin-message-client')?.value||selectedAdminClientId;
+  const message=document.getElementById('admin-client-message-input')?.value.trim()||'';
+  if(!clientId||!message)throw new Error('Choisissez un client et écrivez un message.');
+  const {error}=await withTimeout(
+   ensureSupabase().from('client_messages').insert({client_id:clientId,sender_id:currentAdminContext.user.id,message,is_read:false}),
+   12000,
+   'Le serveur n’a pas répondu à l’envoi du message.'
+  );
+  if(error)throw error;
+  form?.reset();
+  setStatus('Message envoyé au client.',true);
+  await loadAdminClientMessages(clientId);
+ }catch(error){
+  console.error('[ADMIN CLIENT MESSAGE]',error);
+  setStatus(adminErrorText(error));
+ }finally{
+  if(button){button.disabled=false;button.textContent=button.dataset.oldText||'Envoyer';}
+ }
+}
 
 /* ---------- ADMIN : SITE CONTENT ---------- */
 function contentTextValue(content){if(content==null)return '';if(typeof content==='object')return content.text??JSON.stringify(content,null,2);try{const x=JSON.parse(content);return typeof x==='object'?(x.text??JSON.stringify(x,null,2)):String(x);}catch(_){return String(content);}}
