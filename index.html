@@ -262,7 +262,7 @@ footer{background:#050b15;color:#aeb8c8;padding:35px 0}
 <header>
  <div class="container nav">
   <div class="logo">
-   <div class="logo-mark" onclick="go('home')">EH</div>
+   <div class="logo-mark" onclick="showVisitorHome()">EH</div>
    <div class="logo-text" id="admin-title-trigger" role="button" tabindex="0" aria-label="Ethicall Hacking" onclick="adminTripleClick(event)">Ethicall Hacking<small>CYBERSÉCURITÉ · ÉTHIQUE</small></div>
   </div>
 
@@ -520,7 +520,7 @@ footer{background:#050b15;color:#aeb8c8;padding:35px 0}
    <div class="auth-links">
     <a href="#" onclick="go('register');return false" data-i18n="createAccount">Créer un compte</a>
     <a href="#" onclick="go('forgot');return false" data-i18n="forgotPassword">Mot de passe oublié ?</a>
-    <a href="#" onclick="go('home');return false" data-i18n="backHome">Retour à l’accueil</a>
+    <a href="#" onclick="showVisitorHome();return false" data-i18n="backHome">Retour à l’accueil</a>
    </div>
   </div>
  </div>
@@ -544,7 +544,7 @@ footer{background:#050b15;color:#aeb8c8;padding:35px 0}
    </form>
    <div class="auth-links">
     <a href="#" onclick="go('login');return false" data-i18n="backLogin">Retour à la connexion</a>
-    <a href="#" onclick="go('home');return false" data-i18n="backHome">Retour à l’accueil</a>
+    <a href="#" onclick="showVisitorHome();return false" data-i18n="backHome">Retour à l’accueil</a>
    </div>
   </div>
  </div>
@@ -594,7 +594,7 @@ footer{background:#050b15;color:#aeb8c8;padding:35px 0}
      <div class="field full"><button class="btn gold" style="width:100%" type="submit"><i class="fa-solid fa-user-plus"></i><span data-i18n="register">Créer mon compte</span></button></div>
     </div>
    </form>
-   <div class="auth-links"><a href="#" onclick="go('login');return false" data-i18n="alreadyAccount">J’ai déjà un compte</a><a href="#" onclick="go('home');return false" data-i18n="backHome">Retour à l’accueil</a></div>
+   <div class="auth-links"><a href="#" onclick="go('login');return false" data-i18n="alreadyAccount">J’ai déjà un compte</a><a href="#" onclick="showVisitorHome();return false" data-i18n="backHome">Retour à l’accueil</a></div>
   </div>
  </div>
 </section>
@@ -607,7 +607,7 @@ footer{background:#050b15;color:#aeb8c8;padding:35px 0}
     <span class="eyebrow" data-i18n="dashboardEyebrow">Espace personnel</span>
     <h2 data-i18n="dashboardTitle">Mon espace</h2>
    </div>
-   <button class="btn dark" onclick="go('home')"><i class="fa-solid fa-house"></i><span data-i18n="backHome">Retour à l’accueil</span></button>
+   <button class="btn dark" onclick="showVisitorHome()"><i class="fa-solid fa-house"></i><span data-i18n="backHome">Retour à l’accueil</span></button>
   </div>
 
   <div class="dash-grid">
@@ -807,6 +807,16 @@ function applyLanguage(lang){
  });
 }
 
+function showVisitorHome(){
+  // Navigation vers le site public uniquement.
+  // Un administrateur authentifié reste protégé sur son tableau de bord.
+  if(window.adminViewActive===true || window.adminNavigationLock===true) return;
+  document.querySelectorAll(".page").forEach(x=>x.classList.remove("active"));
+  document.getElementById("home-page")?.classList.add("active");
+  window.scrollTo({top:0,behavior:"smooth"});
+  document.getElementById("navlinks")?.classList.remove("open");
+}
+
 function go(page){
  // Absolute protection: once an administrator is authenticated, no delayed
  // navigation event may send the session back to the visitor home page.
@@ -825,7 +835,7 @@ function openHomeSection(selector){
  const target=document.querySelector(selector);
  if(!target) return;
  if(!document.getElementById("home-page")?.classList.contains("active")){
-   go("home");
+   showVisitorHome();
    setTimeout(()=>target.scrollIntoView({behavior:"smooth",block:"start"}),30);
  }else{
    target.scrollIntoView({behavior:"smooth",block:"start"});
@@ -1373,46 +1383,56 @@ async function signOut(){
   if(serviceChannel){try{await ensureSupabase().removeChannel(serviceChannel);}catch(_){}serviceChannel=null;}
   try{await ensureSupabase().auth.signOut();}catch(error){console.error(error);}
   hidePrivatePages();
-  go('home');
+  showVisitorHome();
 }
 
-let sessionRestoreFinished=false;
+// ================= INITIALISATION AUTHENTIFICATION =================
+// Il n'y a qu'une seule source de vérité pour le routage de session :
+// - connexion admin/client : le formulaire ouvre directement la bonne page ;
+// - rechargement du site : initializeAuthState() restaure la session ;
+// - onAuthStateChange ne fait jamais de routage après une connexion.
+// Cela supprime les courses qui pouvaient renvoyer l'administrateur vers l'accueil.
+let authInitializationDone=false;
 
-async function restoreSession(){
+async function initializeAuthState(){
+  if(authInitializationDone) return;
+  authInitializationDone=true;
+
   try{
-    const user=await getSessionUser();
-    if(!user)return;
+    const sb=ensureSupabase();
+    const {data,error}=await withTimeout(
+      sb.auth.getSession(),
+      ADMIN_ROLE_TIMEOUT,
+      'La session Supabase n’a pas pu être restaurée.'
+    );
+    if(error) throw error;
 
-    // Never redirect an authenticated administrator to the visitor site.
-    // This function can run at the same time as the admin login flow, so it
-    // must respect the admin navigation lock and restore the dashboard.
+    const user=data?.session?.user || null;
+    if(!user){
+      adminViewActive=false; window.adminViewActive=false;
+      adminNavigationLock=false; window.adminNavigationLock=false;
+      return;
+    }
+
     const profile=await getMyProfile(user);
+
     if(profile?.role==='admin'){
-      if(adminLoginInProgress || adminViewActive || adminNavigationLock){
-        return;
-      }
       const admin={user,profile};
       currentAdminContext=admin;
       adminViewActive=true; window.adminViewActive=true;
       adminNavigationLock=true; window.adminNavigationLock=true;
-      try{
-        await openAdminDashboard(admin);
-      }catch(error){
-        console.error('[ADMIN RESTORE]',error);
-        adminViewActive=true; window.adminViewActive=true;
-        adminNavigationLock=true; window.adminNavigationLock=true;
-        hidePrivatePages();
-        document.getElementById('admin-page')?.classList.add('active');
-        const identity=document.getElementById('adminIdentity');
-        if(identity) identity.textContent=`Administrateur authentifié — ${profile.email || user.email || ''}`;
-      }
+      await openAdminDashboard(admin);
       return;
     }
 
-    if(adminNavigationLock || adminLoginInProgress || adminViewActive) return;
+    // Session client persistante.
+    adminViewActive=false; window.adminViewActive=false;
+    adminNavigationLock=false; window.adminNavigationLock=false;
     await showClientDashboard(user);
   }catch(error){
-    console.error('[SESSION]',error);
+    console.error('[AUTH INIT]',error);
+    // Une erreur de restauration ne doit jamais provoquer une redirection
+    // automatique vers une autre page.
   }
 }
 
@@ -1436,40 +1456,20 @@ document.addEventListener('DOMContentLoaded',()=>{
   document.getElementById('admin-create-form')?.addEventListener('submit',createServiceRequest);
   document.getElementById('admin-login-form')?.addEventListener('submit',adminSubmitLogin);
   document.getElementById('admin-login-modal')?.addEventListener('click',event=>{if(event.target.id==='admin-login-modal')closeAdminLogin();});
-  document.addEventListener('keydown',event=>{if(event.key==='Escape')closeAdminLogin();});
-  restoreSession();
+  document.addEventListener('keydown',event=>{if(event.key==='Escape' && !adminViewActive)closeAdminLogin();});
+
+  initializeAuthState();
 });
 
 if(supabaseClient){
-  supabaseClient.auth.onAuthStateChange((event, session)=>{
+  supabaseClient.auth.onAuthStateChange((event)=>{
+    // Les changements d'état d'authentification ne déclenchent pas de routage
+    // après une connexion : les formulaires gèrent eux-mêmes leur destination.
     if(event==='PASSWORD_RECOVERY'){
       passwordRecoveryActive=true;
       adminViewActive=false; window.adminViewActive=false;
+      adminNavigationLock=false; window.adminNavigationLock=false;
       go('reset');
-      return;
-    }
-
-    if(event==='SIGNED_IN'){
-      // Ne pas laisser un ancien restoreSession ou un événement d'authentification
-      // écraser le tableau de bord juste après une connexion administrateur.
-      setTimeout(async()=>{
-        if(adminLoginInProgress || adminViewActive) return;
-        try{
-          const user=session?.user || await getSessionUser();
-          if(!user) return;
-          const profile=await getMyProfile(user);
-          if(profile?.role==='admin'){
-            const admin=await getAdminContext(user);
-            currentAdminContext=admin;
-            adminViewActive=true; window.adminViewActive=true;
-            await openAdminDashboard(admin);
-          }else if(!adminViewActive){
-            await showClientDashboard(user);
-          }
-        }catch(error){
-          console.error('[AUTH SIGNED_IN]',error);
-        }
-      },0);
       return;
     }
 
@@ -1483,6 +1483,9 @@ if(supabaseClient){
         serviceChannel=null;
       }
       hidePrivatePages();
+      // Le retour à l'accueil est autorisé uniquement après une vraie déconnexion.
+      document.querySelectorAll('.page').forEach(x=>x.classList.remove('active'));
+      document.getElementById('home-page')?.classList.add('active');
     }
   });
 }
