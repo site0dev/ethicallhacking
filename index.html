@@ -352,6 +352,45 @@ footer{background:#050b15;color:#aeb8c8;padding:35px 0}
   }
 </style>
 
+
+<style id="service-modal-fix">
+.service-modal{
+  position:fixed !important;
+  inset:0 !important;
+  z-index:99999 !important;
+  display:none;
+  align-items:center;
+  justify-content:center;
+  padding:16px;
+  box-sizing:border-box;
+}
+.service-modal.open{display:flex !important}
+.service-modal-box{
+  width:min(680px,94vw);
+  max-height:88vh;
+  overflow:auto;
+  box-sizing:border-box;
+  position:relative;
+  margin:auto;
+}
+.service-modal-box h3{
+  font-family:Arial,Helvetica,sans-serif !important;
+}
+@media(max-width:600px){
+  .service-modal{padding:10px}
+  .service-modal-box{
+    width:100%;
+    max-height:90vh;
+    padding:22px 18px;
+  }
+  .service-modal-close{
+    width:42px;
+    height:42px;
+    font-size:1.5rem;
+  }
+}
+</style>
+
 </head>
 
 <body>
@@ -1096,18 +1135,47 @@ async function openAdminDashboard(admin){
 /* ---------- ADMIN TABS ---------- */
 function switchAdminTab(name){document.querySelectorAll('.admin-tabs button').forEach(b=>b.classList.toggle('active',b.dataset.adminTab===name));document.querySelectorAll('.admin-tab').forEach(t=>t.classList.toggle('active',t.id==='admin-tab-'+name));}
 
-function openServiceModalEncoded(encoded){try{openServiceModal(JSON.parse(decodeURIComponent(encoded)));}catch(e){}}
 function openServiceModal(service){
- const modal=document.getElementById('service-detail-modal');if(!modal)return;
+ const modal=document.getElementById('service-detail-modal');
+ if(!modal)return;
+
  document.getElementById('service-detail-title').textContent=service?.name||'Service';
  document.getElementById('service-detail-description').textContent=service?.description||'Aucune description disponible.';
  document.getElementById('service-detail-price').textContent=service?.price==null?'Sur devis':formatEUR(service.price);
- document.getElementById('service-detail-icon').innerHTML=service?.icon?`<i class="${esc(service.icon)}"></i>`:'';
- modal.classList.add('open');modal.setAttribute('aria-hidden','false');document.body.style.overflow='hidden';
+
+ const icon=document.getElementById('service-detail-icon');
+ if(icon){
+  icon.innerHTML=service?.icon?`<i class="${esc(service.icon)}"></i>`:'';
+ }
+
+ modal.classList.add('open');
+ modal.setAttribute('aria-hidden','false');
+ document.body.style.overflow='hidden';
+
+ requestAnimationFrame(()=>{
+  document.querySelector('.service-modal-close')?.focus();
+ });
 }
-function closeServiceModal(){const modal=document.getElementById('service-detail-modal');if(!modal)return;modal.classList.remove('open');modal.setAttribute('aria-hidden','true');document.body.style.overflow='';}
-document.addEventListener('keydown',e=>{if(e.key==='Escape')closeServiceModal();});
-document.addEventListener('click',e=>{const m=document.getElementById('service-detail-modal');if(m&&e.target===m)closeServiceModal();});
+
+function closeServiceModal(){
+ const modal=document.getElementById('service-detail-modal');
+ if(!modal)return;
+ modal.classList.remove('open');
+ modal.setAttribute('aria-hidden','true');
+ document.body.style.overflow='';
+}
+
+document.addEventListener('keydown',e=>{
+ if(e.key==='Escape'){
+  const modal=document.getElementById('service-detail-modal');
+  if(modal?.classList.contains('open'))closeServiceModal();
+ }
+});
+
+document.addEventListener('click',e=>{
+ const modal=document.getElementById('service-detail-modal');
+ if(modal && e.target===modal)closeServiceModal();
+});
 
 /* ---------- CLIENT ---------- */
 async function loadPublicServicesForClient(){
@@ -1185,13 +1253,46 @@ function formatEUR(value){
 
 /* ---------- PUBLIC DYNAMIC CONTENT ---------- */
 async function loadPublicServices(){
- const box=document.getElementById('public-services-grid');if(!box)return;
+ const box=document.getElementById('public-services-grid');
+ if(!box)return;
  try{
-  const {data,error}=await ensureSupabase().from('services').select('id,name,description,price,image_url,icon,display_order,is_active').eq('is_active',true).order('display_order',{ascending:true});
+  const {data,error}=await ensureSupabase().from('services')
+   .select('id,name,description,price,image_url,icon,display_order,is_active')
+   .eq('is_active',true)
+   .order('display_order',{ascending:true});
   if(error)throw error;
+
   const rows=data||[];
-  box.innerHTML=rows.length?rows.map(x=>{const desc=String(x.description||'');const excerpt=desc.length>170?desc.slice(0,170).trim()+'…':desc;return `<article class="card service-card">${x.icon?`<i class="${esc(x.icon)}"></i>`:''}<h3>${esc(x.name||'Service')}</h3><p class="service-preview">${esc(excerpt||'Découvrez ce service et ses modalités.')}</p><div class="service-actions"><span class="service-price">${x.price!=null?formatEUR(x.price):'Sur devis'}</span><button class="service-details-btn" type="button" onclick="openServiceModalEncoded('${encodeURIComponent(JSON.stringify({name:x.name||'Service',description:desc,price:x.price,icon:x.icon||''}))}')">Voir les détails</button></div></article>`}).join(''):'<div class="empty" style="grid-column:1/-1">Aucun service publié pour le moment.</div>';
- }catch(error){box.innerHTML=`<div class="empty" style="grid-column:1/-1">${esc(adminErrorText(error))}</div>`;}
+  window.__publicServices = rows;
+
+  box.innerHTML = rows.length ? rows.map((x,i)=>{
+   const desc=String(x.description||'');
+   const excerpt=desc.length>170?desc.slice(0,170).trim()+'…':desc;
+   return `<article class="card service-card">
+     ${x.icon?`<i class="${esc(x.icon)}"></i>`:''}
+     <h3>${esc(x.name||'Service')}</h3>
+     <p class="service-preview">${esc(excerpt||'Découvrez ce service et ses modalités.')}</p>
+     <div class="service-actions">
+       <span class="service-price">${x.price!=null?formatEUR(x.price):'Sur devis'}</span>
+       <button class="service-details-btn" type="button" data-service-index="${i}" aria-haspopup="dialog">Voir les détails</button>
+     </div>
+   </article>`;
+  }).join('') :
+  '<div class="empty" style="grid-column:1/-1">Aucun service publié pour le moment.</div>';
+
+  // Un seul gestionnaire pour tous les boutons : aucune description
+  // n'est injectée dans un onclick, donc les apostrophes/guillemets
+  // ne peuvent plus casser l'ouverture d'une modal.
+  box.querySelectorAll('.service-details-btn').forEach(btn=>{
+   btn.addEventListener('click',()=>{
+    const index=Number(btn.dataset.serviceIndex);
+    const service=window.__publicServices?.[index];
+    if(service)openServiceModal(service);
+   });
+  });
+ }catch(error){
+  box.innerHTML=`<div class="empty" style="grid-column:1/-1">${esc(adminErrorText(error))}</div>`;
+ }
 }
 async function loadPublicMethod(){
  const box=document.getElementById('public-method-grid');if(!box)return;
