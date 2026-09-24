@@ -1110,7 +1110,7 @@ async function sendClientMessage(event){event?.preventDefault();try{const user=a
 
 async function showClientDashboard(user){adminViewActive=false;hidePrivatePages();document.getElementById('dashboard-page')?.classList.add('active');const profile=await getMyProfile(user);const p=document.querySelector('#dashboard-page .profile-summary');if(p)p.textContent=`${profile?.full_name||user.user_metadata?.full_name||'Client'} — ${profile?.email||user.email||''}${profile?.phone?' — '+profile.phone:''}`;await loadPublicServicesForClient();await loadClientServices();await loadClientMessages();await startRealtime(user,false);window.scrollTo({top:0,behavior:'smooth'});}
 async function signInClient(email,password){if(authBusy)return;authBusy=true;try{const {data,error}=await ensureSupabase().auth.signInWithPassword({email:normalizeEmail(email),password});if(error)throw error;const profile=await getMyProfile(data.user);if(profile?.role==='admin')throw new Error('Ce compte est administrateur. Utilisez les 3 clics sur le logo pour ouvrir l’administration.');await showClientDashboard(data.user);}catch(error){try{if(/administrateur/i.test(String(error?.message||'')))await ensureSupabase().auth.signOut();}catch(_){}alert(adminErrorText(error));}finally{authBusy=false;}}
-async function registerClient(name,email,phone,password,confirm){if(!name.trim())return alert('Indiquez votre nom et prénom.');if(password!==confirm)return alert('Les mots de passe ne correspondent pas.');if(password.length<6)return alert('Le mot de passe doit contenir au moins 6 caractères.');if(authBusy)return;authBusy=true;try{const {data,error}=await ensureSupabase().auth.signUp({email:normalizeEmail(email),password,options:{data:{full_name:name.trim(),phone:phone.trim()}}});if(error)throw error;if(data.session&&data.user)await showClientDashboard(data.user);else{alert('Compte créé. Consultez votre e-mail pour confirmer votre adresse.');go('login');}}catch(error){alert(adminErrorText(error));}finally{authBusy=false;}}
+async function registerClient(name,email,phone,password,confirm){if(!name.trim())return alert('Indiquez votre nom et prénom.');if(password!==confirm)return alert('Les mots de passe ne correspondent pas.');if(password.length<6)return alert('Le mot de passe doit contenir au moins 6 caractères.');if(authBusy)return;authBusy=true;try{const {data,error}=await ensureSupabase().auth.signUp({email:normalizeEmail(email),password,options:{data:{full_name:name.trim(),phone:phone.trim()}}});if(error)throw error;if(data.session&&data.user)await showClientDashboard(data.user);else{alert('Compte créé. Consultez votre e-mail pour confirmer votre adresse.');}}catch(error){alert(adminErrorText(error));}finally{authBusy=false;}}
 async function sendResetEmail(email){email=normalizeEmail(email);if(!email)return alert('Saisissez votre adresse e-mail.');try{const {error}=await ensureSupabase().auth.resetPasswordForEmail(email,{redirectTo:window.location.origin+window.location.pathname});if(error)throw error;alert('Le lien de réinitialisation a été envoyé.');go('login');}catch(error){alert(adminErrorText(error));}}
 async function updateRecoveredPassword(password,confirm){if(password!==confirm)return alert('Les mots de passe ne correspondent pas.');if(password.length<6)return alert('Le mot de passe doit contenir au moins 6 caractères.');try{const {error}=await ensureSupabase().auth.updateUser({password});if(error)throw error;passwordRecoveryActive=false;alert('Mot de passe modifié.');await signOut();}catch(error){alert(adminErrorText(error));}}
 
@@ -1199,7 +1199,34 @@ async function startRealtime(user,isAdmin){const sb=ensureSupabase();if(serviceC
 
 /* ---------- SESSION / LOGOUT ---------- */
 async function signOut(){adminViewActive=false;currentAdminContext=null;passwordRecoveryActive=false;clearTimeout(adminRefreshTimer);if(serviceChannel){try{await ensureSupabase().removeChannel(serviceChannel);}catch(_){}}if(messageChannel){try{await ensureSupabase().removeChannel(messageChannel);}catch(_){}}serviceChannel=null;messageChannel=null;try{await ensureSupabase().auth.signOut();}catch(error){console.error(error);}hidePrivatePages();go('home');}
-async function initializeSession(){try{const user=await getSessionUser();if(!user)return;const profile=await getMyProfile(user);if(profile?.role==='admin'){const admin=await getAdminContext(user);currentAdminContext=admin;await openAdminDashboard(admin);}else await showClientDashboard(user);}catch(error){console.error('[SESSION INIT]',error);}}
+async function initializeSession(){
+ try{
+  const sb=ensureSupabase();
+  const {data,error}=await withTimeout(sb.auth.getSession(),ADMIN_ROLE_TIMEOUT,'La session Supabase n’a pas pu être récupérée.');
+  if(error)throw error;
+  const session=data?.session||null;
+  if(!session?.user){adminViewActive=false;currentAdminContext=null;return;}
+  const user=session.user;
+  const profile=await getMyProfile(user);
+  if(profile?.role==='admin'){
+   const admin={user,profile};
+   currentAdminContext=admin;
+   adminViewActive=true;
+   await openAdminDashboard(admin);
+   return;
+  }
+  await showClientDashboard(user);
+ }catch(error){
+  console.error('[SESSION INIT]',error);
+  adminViewActive=false;
+  currentAdminContext=null;
+  const raw=String(error?.message||error||'');
+  if(/JWT|token|session.*(expired|invalid)|refresh.*token|not authenticated/i.test(raw)){
+   try{await ensureSupabase().auth.signOut({scope:'local'});}catch(_){}
+   hidePrivatePages();
+  }
+ }
+}
 
 /* ---------- DOM ---------- */
 document.addEventListener('DOMContentLoaded',()=>{
@@ -1226,7 +1253,14 @@ document.addEventListener('DOMContentLoaded',()=>{
  initializeSession();
 });
 
-if(supabaseClient){supabaseClient.auth.onAuthStateChange(event=>{if(event==='PASSWORD_RECOVERY'){passwordRecoveryActive=true;adminViewActive=false;go('reset');}else if(event==='SIGNED_OUT'){adminViewActive=false;currentAdminContext=null;hidePrivatePages();}});}
+if(supabaseClient){
+ supabaseClient.auth.onAuthStateChange((event,session)=>{
+  if(event==='PASSWORD_RECOVERY'){passwordRecoveryActive=true;adminViewActive=false;go('reset');return;}
+  if(event==='SIGNED_OUT'){adminViewActive=false;currentAdminContext=null;clearTimeout(adminRefreshTimer);if(serviceChannel){supabaseClient.removeChannel(serviceChannel).catch(()=>{});serviceChannel=null;}hidePrivatePages();return;}
+  // INITIAL_SESSION, SIGNED_IN and TOKEN_REFRESHED do not navigate pages.
+  if(event==='TOKEN_REFRESHED'&&!session){adminViewActive=false;currentAdminContext=null;}
+ });
+}
 </script>
 </body>
 </html>
