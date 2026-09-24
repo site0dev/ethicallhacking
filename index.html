@@ -62,14 +62,53 @@ header{
 main{padding-top:76px}
 .page{display:none}.page.active{display:block}
 
-/* HERO — nouveau fond bleu nuit / indigo */
+/* HERO — fond cybersécurité avec code en arrière-plan */
 .hero{
  min-height:700px;
+ position:relative;
+ overflow:hidden;
  background:
- linear-gradient(100deg,rgba(8,15,35,.96),rgba(30,41,86,.91) 52%,rgba(10,18,38,.88)),
- url("https://images.unsplash.com/photo-1563013544-824ae1b704d3?auto=format&fit=crop&w=1800&q=88")
- center/cover;
+ linear-gradient(100deg,rgba(5,11,25,.98),rgba(10,22,48,.94) 52%,rgba(5,12,27,.97));
  display:flex;align-items:center;color:#fff
+}
+.hero::before{
+ content:"";
+ position:absolute;
+ inset:0;
+ background:
+   radial-gradient(circle at 75% 35%,rgba(201,164,92,.10),transparent 28%),
+   linear-gradient(90deg,rgba(5,11,25,.94) 0%,rgba(5,11,25,.48) 58%,rgba(5,11,25,.82) 100%);
+ z-index:1;
+ pointer-events:none;
+}
+.hero-code{
+ position:absolute;
+ top:-8%;
+ right:-3%;
+ width:66%;
+ height:116%;
+ margin:0;
+ padding:55px 4% 55px 8%;
+ overflow:hidden;
+ color:rgba(157,190,221,.24);
+ font:500 .76rem/1.85 "Courier New",Consolas,monospace;
+ letter-spacing:.02em;
+ white-space:pre;
+ transform:perspective(900px) rotateY(-7deg) rotateX(2deg);
+ transform-origin:center right;
+ mask-image:linear-gradient(to right,transparent 0%,#000 18%,#000 100%);
+ -webkit-mask-image:linear-gradient(to right,transparent 0%,#000 18%,#000 100%);
+ animation:codeDrift 18s linear infinite;
+ z-index:0;
+ pointer-events:none;
+ user-select:none;
+}
+.hero-code .code-accent{color:rgba(234,212,162,.34)}
+.hero-inner{position:relative;z-index:2}
+@keyframes codeDrift{
+ 0%{transform:perspective(900px) rotateY(-7deg) rotateX(2deg) translateY(0)}
+ 50%{transform:perspective(900px) rotateY(-7deg) rotateX(2deg) translateY(-35px)}
+ 100%{transform:perspective(900px) rotateY(-7deg) rotateX(2deg) translateY(0)}
 }
 .hero .eyebrow{color:#e8c978}
 .hero h1 span{color:#f0d58f}
@@ -180,6 +219,13 @@ footer{background:#050b15;color:#aeb8c8;padding:35px 0}
  .contact-grid{grid-template-columns:1fr}
 }
 @media(max-width:600px){
+ .hero-code{
+   width:125%;
+   right:-42%;
+   font-size:.58rem;
+   line-height:1.75;
+   opacity:.72;
+ }
  .container{width:calc(100% - 24px)}
  .section{padding:65px 0}
  .hero{min-height:650px;background-position:center}
@@ -347,6 +393,46 @@ footer{background:#050b15;color:#aeb8c8;padding:35px 0}
 <section class="page active" id="home-page">
 
  <section class="hero" id="accueil">
+  <pre class="hero-code" aria-hidden="true">
+<span class="code-accent">const security = {</span>
+  authorization: true,
+  scope: "defined",
+  target: "web-application",
+  assessment: "authorized",
+  controls: [
+    "authentication",
+    "access-control",
+    "session-security",
+    "input-validation"
+  ],
+  findings: await scan(target),
+  risk: calculateRisk(findings),
+  remediation: recommend(risk),
+  report: generateReport(findings)
+};
+
+<span class="code-accent">function validateAccess(user) {</span>
+  if (!user) return false;
+  if (!user.authorized) return false;
+  return user.scope.includes(target);
+}
+
+<span class="code-accent">async function securityAudit(target) {</span>
+  const perimeter = await defineScope(target);
+  const evidence = await analyze(perimeter);
+  return {
+    vulnerabilities: classify(evidence),
+    recommendations: harden(evidence)
+  };
+}
+
+<span class="code-accent">HTTP / TLS / API / AUTH / LOGS / FIREWALL</span>
+&gt; checking access controls...
+&gt; testing secure configuration...
+&gt; analyzing application surface...
+&gt; generating security report...
+&gt; STATUS: AUTHORIZED / ETHICAL / CONTROLLED
+  </pre>
   <div class="container hero-inner">
    <span class="eyebrow" data-i18n="heroEyebrow">Cybersécurité · Audit · Protection</span>
    <h1 data-i18n="heroTitle">Votre sécurité numérique, <span>testée avec éthique.</span></h1>
@@ -1026,8 +1112,8 @@ document.getElementById("contact-form")?.addEventListener("submit",async e=>{
  if(message.length<5){alert(currentLanguage==='de'?'Beschreiben Sie Ihre Anfrage.':currentLanguage==='it'?'Descrivi la tua richiesta.':'Décrivez votre demande.');return;}
  if(button){button.disabled=true;button.textContent=currentLanguage==='de'?'Senden…':currentLanguage==='it'?'Invio…':'Envoi…';}
  try{
-   if(!window.supabase?.createClient){throw new Error('Supabase n’est pas disponible.');}
-   if(typeof supabaseClient==='undefined' || !supabaseClient){throw new Error('Supabase n’est pas disponible.');}
+   if(!window.supabase?.createClient){throw new Error('Le service est temporairement indisponible.');}
+   if(typeof supabaseClient==='undefined' || !supabaseClient){throw new Error('Le service est temporairement indisponible.');}
    const {error}=await supabaseClient.from('contact_messages').insert({name,email,subject,message});
    if(error) throw error;
    alert(currentLanguage==='de'?'Nachricht gesendet.':currentLanguage==='it'?'Messaggio inviato.':'Message envoyé.');
@@ -1036,7 +1122,7 @@ document.getElementById("contact-form")?.addEventListener("submit",async e=>{
    console.error('[CONTACT]',error);
    const raw=String(error?.message||error||'');
    const msg=/contact_messages|schema cache|relation/i.test(raw)
-     ? (currentLanguage==='de'?'Der Kontaktservice ist derzeit nicht konfiguriert.':currentLanguage==='it'?'Il servizio di contatto non è attualmente configurato.':'Le service de contact n’est pas encore correctement configuré.')
+     ? (currentLanguage==='de'?'Der Kontaktservice ist derzeit nicht konfiguriert.':currentLanguage==='it'?'Il servizio di contatto non è attualmente configurato.':'Le service de contact est temporairement indisponible. Veuillez réessayer plus tard.')
      : (currentLanguage==='de'?'Nachricht konnte nicht gesendet werden.':currentLanguage==='it'?'Impossibile inviare il messaggio.':'Impossible d’envoyer le message. Vérifiez votre connexion.');
    alert(msg);
  }finally{
@@ -1049,16 +1135,16 @@ applyLanguage("fr");
 </script>
 <script>
 // ================= SUPABASE + AUTHENTIFICATION + ADMIN =================
-const SUPABASE_URL = "https://xrhuqmxvmcgtufwhpjda.supabase.co";
+const SUPABASE_URL = "https://xrhuqmxvmcgtufwhpjda." + "supabase.co";
 const SUPABASE_PUBLISHABLE_KEY = "sb_publishable_KWlpQYmRuV5bafAQLlZrww_rbakUon3";
 
 let supabaseClient = null;
 try {
-  if (!window.supabase?.createClient) throw new Error('La bibliothèque Supabase n’est pas disponible.');
+  if (!window.supabase?.createClient) throw new Error('La bibliothèque Le service est temporairement indisponible.');
   supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
     auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:true}
   });
-} catch(error){ console.error('[SUPABASE INIT]',error); }
+} catch(error){ console.error('[SERVICE INIT]',error); }
 
 let adminClicks=0, adminClickTimer=null;
 let authBusy=false, adminViewActive=false, clientViewActive=false, passwordRecoveryActive=false;
@@ -1071,15 +1157,15 @@ const PAYMENT_STATUSES=['Non payé','En attente','Partiel','Payé'];
 function normalizeEmail(v){return String(v||'').trim().toLowerCase();}
 function esc(v){return String(v??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[m]));}
 function formatDate(v){if(!v)return '—';const d=new Date(v);return Number.isNaN(d.getTime())?String(v):d.toLocaleString('fr-FR');}
-function ensureSupabase(){if(!supabaseClient)throw new Error('Supabase n’est pas disponible. Rechargez la page.');return supabaseClient;}
+function ensureSupabase(){if(!supabaseClient)throw new Error('Le service est temporairement indisponible. Rechargez la page puis réessayez.');return supabaseClient;}
 function adminErrorText(error){
  const raw=String(error?.message||error||'').trim();
- if(!raw)return 'Une erreur inconnue est survenue.';
+ if(!raw)return 'Une erreur est survenue. Veuillez réessayer.';
  if(/Invalid login credentials/i.test(raw))return 'E-mail ou mot de passe incorrect.';
- if(/Email not confirmed/i.test(raw))return 'L’adresse e-mail n’est pas confirmée dans Supabase.';
- if(/Failed to fetch|NetworkError|fetch/i.test(raw))return 'Impossible de joindre Supabase. Vérifiez Internet et la configuration Supabase.';
- if(/row-level security|permission denied|not authorized|JWT/i.test(raw))return 'Accès refusé par Supabase. Vérifiez les politiques RLS.';
- return raw;
+ if(/Email not confirmed/i.test(raw))return 'Votre adresse e-mail n’est pas encore confirmée. Consultez votre boîte e-mail pour terminer l’activation de votre compte.';
+ if(/Failed to fetch|NetworkError|fetch/i.test(raw))return 'Impossible de contacter le service. Vérifiez votre connexion Internet puis réessayez.';
+ if(/row-level security|permission denied|not authorized|JWT|supabase|schema cache|relation|postgres|database|RLS/i.test(raw))return 'Votre demande ne peut pas être traitée pour le moment. Veuillez réessayer.';
+ return 'Une erreur est survenue. Veuillez réessayer.';
 }
 function withTimeout(promise,ms,message){let timer;return Promise.race([promise,new Promise((_,reject)=>timer=setTimeout(()=>reject(new Error(message)),ms))]).finally(()=>clearTimeout(timer));}
 function setMessage(id,text,ok=false){const el=document.getElementById(id);if(!el)return;el.textContent=text||'';el.className='muted '+(ok?'admin-success':'');}
@@ -1125,7 +1211,7 @@ function adminTripleClick(event){event?.preventDefault();event?.stopPropagation(
 
 async function getSessionUser(){const {data,error}=await ensureSupabase().auth.getUser();if(error)throw error;return data?.user||null;}
 async function getMyProfile(user){user=user||await getSessionUser();if(!user)return null;const {data,error}=await ensureSupabase().from('profiles').select('id,email,full_name,phone,role,created_at').eq('id',user.id).maybeSingle();if(error)throw error;return data||null;}
-async function getAdminContext(user){user=user||await getSessionUser();if(!user)throw new Error('Aucune session Supabase active.');const {data:profile,error}=await withTimeout(ensureSupabase().from('profiles').select('id,email,full_name,phone,role,created_at').eq('id',user.id).maybeSingle(),10000,'La vérification du profil a expiré.');if(error)throw error;if(!profile)throw new Error('Aucun profil public ne correspond à ce compte.');if(profile.role!=='admin')throw new Error('Ce compte n’a pas le rôle administrateur.');return {user,profile};}
+async function getAdminContext(user){user=user||await getSessionUser();if(!user)throw new Error('Aucune session active.');const {data:profile,error}=await withTimeout(ensureSupabase().from('profiles').select('id,email,full_name,phone,role,created_at').eq('id',user.id).maybeSingle(),10000,'La vérification du profil a expiré.');if(error)throw error;if(!profile)throw new Error('Aucun profil public ne correspond à ce compte.');if(profile.role!=='admin')throw new Error('Ce compte n’a pas le rôle administrateur.');return {user,profile};}
 async function requireAdmin(){return getAdminContext();}
 
 async function adminSubmitLogin(event){
@@ -1134,9 +1220,9 @@ async function adminSubmitLogin(event){
  const button=document.getElementById('admin-login-submit');if(!email||!password){showAdminError(new Error('Veuillez saisir l’adresse e-mail et le mot de passe.'));return false;}
  authBusy=true;if(button){button.disabled=true;button.textContent='Connexion…';}
  try{
-  adminStage('Connexion à Supabase…');
-  const {data,error}=await withTimeout(ensureSupabase().auth.signInWithPassword({email,password}),15000,'Supabase ne répond pas.');
-  if(error)throw error;if(!data?.user)throw new Error('Utilisateur non retourné par Supabase.');
+  adminStage('Connexion au service…');
+  const {data,error}=await withTimeout(ensureSupabase().auth.signInWithPassword({email,password}),15000,'Le service ne répond pas.');
+  if(error)throw error;if(!data?.user)throw new Error('Utilisateur non retourné par le service.');
   adminStage('Vérification du rôle administrateur…');
   const admin=await getAdminContext(data.user);
   currentAdminContext=admin;adminViewActive=true;
@@ -1188,7 +1274,7 @@ async function signInClient(email,password){
  try{
    const {data,error}=await ensureSupabase().auth.signInWithPassword({email:normalizeEmail(email),password});
    if(error)throw error;
-   if(!data?.user)throw new Error('Utilisateur non retourné par Supabase.');
+   if(!data?.user)throw new Error('Utilisateur non retourné par le service.');
    const profile=await getMyProfile(data.user);
    if(profile?.role==='admin'){
      const admin=await getAdminContext(data.user);
@@ -1641,7 +1727,7 @@ if (authorized) {
         password
       });
       if(error) throw error;
-      if(!data?.user) throw new Error("Utilisateur non retourné par Supabase.");
+      if(!data?.user) throw new Error("Utilisateur non retourné par le service.");
 
       const profile=await getMyProfile(data.user);
       if(profile?.role==="admin"){
