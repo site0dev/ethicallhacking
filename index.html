@@ -1048,16 +1048,22 @@ function normalizeEmail(v){return String(v||'').trim().toLowerCase();}
 function esc(v){return String(v??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[m]));}
 function formatDate(v){if(!v)return '—';const d=new Date(v);return Number.isNaN(d.getTime())?String(v):d.toLocaleString('fr-FR');}
 function ensureSupabase(){if(!supabaseClient)throw new Error('Le service est temporairement indisponible. Rechargez la page puis réessayez.');return supabaseClient;}
-function adminErrorText(error){
+function clientErrorText(error){
  const raw=String(error?.message||error||'').trim();
- if(!raw)return 'Une erreur est survenue. Veuillez réessayer.';
+ if(!raw)return 'Une erreur est survenue dans l’administration. Veuillez réessayer.';
  if(/Invalid login credentials/i.test(raw))return 'Adresse e-mail ou mot de passe administrateur incorrect.';
  if(/Email not confirmed/i.test(raw))return 'L’adresse e-mail du compte administrateur n’est pas encore confirmée.';
- if(/Failed to fetch|NetworkError|fetch/i.test(raw))return 'Le service est temporairement indisponible. Vérifiez votre connexion Internet puis réessayez.';
+ if(/Failed to fetch|NetworkError|fetch/i.test(raw))return 'Le service d’administration est temporairement indisponible. Vérifiez votre connexion Internet puis réessayez.';
  if(/row-level security|permission denied|not authorized|JWT|supabase|schema cache|relation|postgres|database|RLS/i.test(raw))return 'L’accès à l’administration n’a pas pu être vérifié. Vérifiez les identifiants et les droits administrateur.';
- if(/n.?a pas le rôle administrateur|rôle administrateur|profil public/i.test(raw))return 'Ce compte ne dispose pas des droits administrateur.';
+ if(/n.?a pas le rôle administrateur|rôle administrateur/i.test(raw))return 'Ce compte ne dispose pas des droits administrateur.';
+ if(/Aucun profil public|profil public ne correspond/i.test(raw))return 'Le compte administrateur ne possède pas de profil administrateur valide.';
  if(/timeout|expiré/i.test(raw))return 'La vérification de l’administration a pris trop de temps. Veuillez réessayer.';
+ if(/Aucune session active/i.test(raw))return 'La session administrateur a expiré. Veuillez vous reconnecter.';
+ if(/Contexte administrateur invalide|Page administration absente/i.test(raw))return 'L’espace d’administration n’a pas pu être ouvert. Veuillez réessayer.';
  return 'Impossible de se connecter à l’administration. Vérifiez les identifiants puis réessayez.';
+}
+function clientErrorText(error){
+ return 'Une erreur est survenue. Veuillez réessayer.';
 }
 function withTimeout(promise,ms,message){let timer;return Promise.race([promise,new Promise((_,reject)=>timer=setTimeout(()=>reject(new Error(message)),ms))]).finally(()=>clearTimeout(timer));}
 function setMessage(id,text,ok=false){const el=document.getElementById(id);if(!el)return;el.textContent=text||'';el.className='muted '+(ok?'admin-success':'');}
@@ -1114,7 +1120,7 @@ function updateAuthUI(){
 /* ---------- ADMIN LOGIN : 3 CLICS ---------- */
 function clearAdminError(){const e=document.getElementById('admin-login-error');if(e){e.textContent='';e.style.display='none';}}
 function adminStage(text,ok=true){const e=document.getElementById('admin-login-error');if(!e)return;e.style.display='block';e.style.color=ok?'var(--ok)':'var(--danger)';e.textContent=text;}
-function showAdminError(error){const msg=adminErrorText(error);console.error('[ADMIN]',error);const e=document.getElementById('admin-login-error');if(e){e.style.display='block';e.style.color='var(--danger)';e.textContent=msg;}document.getElementById('admin-login-modal')?.classList.add('open');return msg;}
+function showAdminError(error){const msg=clientErrorText(error);console.error('[ADMIN]',error);const e=document.getElementById('admin-login-error');if(e){e.style.display='block';e.style.color='var(--danger)';e.textContent=msg;}document.getElementById('admin-login-modal')?.classList.add('open');return msg;}
 function openAdminLogin(){const m=document.getElementById('admin-login-modal');if(!m)return;clearAdminError();m.classList.add('open');m.setAttribute('aria-hidden','false');setTimeout(()=>document.getElementById('admin-email')?.focus(),40);}
 function closeAdminLogin(){const m=document.getElementById('admin-login-modal');if(!m)return;m.classList.remove('open');m.setAttribute('aria-hidden','true');document.getElementById('admin-login-form')?.reset();clearAdminError();}
 function adminTripleClick(event){event?.preventDefault();event?.stopPropagation();adminClicks++;clearTimeout(adminClickTimer);adminClickTimer=setTimeout(()=>{adminClicks=0;},1200);if(adminClicks===3){adminClicks=0;clearTimeout(adminClickTimer);openAdminLogin();}}
@@ -1130,10 +1136,10 @@ async function adminSubmitLogin(event){
  const button=document.getElementById('admin-login-submit');if(!email||!password){showAdminError(new Error('Veuillez saisir l’adresse e-mail et le mot de passe.'));return false;}
  authBusy=true;if(button){button.disabled=true;button.textContent='Connexion…';}
  try{
-  adminStage('Connexion au service…');
+  adminStage('Connexion à l’administration…');
   const {data,error}=await withTimeout(ensureSupabase().auth.signInWithPassword({email,password}),15000,'Le service ne répond pas.');
   if(error)throw error;if(!data?.user)throw new Error('Utilisateur non retourné par le service.');
-  adminStage('Vérification du rôle administrateur…');
+  adminStage('Vérification des autorisations…');
   const admin=await getAdminContext(data.user);
   currentAdminContext=admin;adminViewActive=true;
   await openAdminDashboard(admin);closeAdminLogin();
@@ -1205,13 +1211,13 @@ async function loadPublicServicesForClient(){
  select.innerHTML='<option value="">Choisir un service</option>'+(data||[]).map(x=>`<option value="${esc(x.name)}">${esc(x.name)}</option>`).join('');
 }
 function renderClientService(x){return `<div class="admin-service"><div class="admin-service-head"><div><strong>${esc(x.service_name||'Service')}</strong><br><small>Mis à jour : ${esc(formatDate(x.updated_at))}</small></div><span class="status">${esc(x.status||'Demande reçue')}</span></div><p>${x.description?esc(x.description):'Aucune description.'}</p><div class="admin-grid-3"><div><small>Priorité</small><br><strong>${esc(x.priority||'normal')}</strong></div><div><small>Paiement</small><br><strong>${esc(x.payment_status||'Non payé')}</strong></div><div><small>Montant</small><br><strong class="eur-price">${x.amount==null?'—':formatEUR(x.amount)}</strong></div></div>${x.admin_note?`<div class="app-message"><strong>Note de l’administration</strong><br>${esc(x.admin_note)}</div>`:''}</div>`;}
-async function loadClientServices(){const box=document.getElementById('client-service-list'),user=await getSessionUser();if(!box||!user)return;const {data,error}=await ensureSupabase().from('service_requests').select('id,service_name,description,status,priority,amount,payment_status,admin_note,updated_at').eq('client_id',user.id).order('updated_at',{ascending:false});if(error){box.innerHTML=`<div class="empty">${esc(adminErrorText(error))}</div>`;return;}box.innerHTML=(data||[]).length?(data||[]).map(renderClientService).join(''):'<div class="empty">Aucun dossier pour le moment.</div>';}
-async function createClientRequest(event){event?.preventDefault();try{const user=await getSessionUser();if(!user)throw new Error('Connectez-vous avant d’envoyer une demande.');const service_name=document.getElementById('client-request-service')?.value;const priority=document.getElementById('client-request-priority')?.value||'normal';const description=document.getElementById('client-request-description')?.value.trim();if(!service_name||!description)throw new Error('Choisissez un service et décrivez votre besoin.');const {error}=await ensureSupabase().from('service_requests').insert({client_id:user.id,service_name,description,priority,status:'Demande reçue',payment_status:'Non payé'});if(error)throw error;event.target.reset();setMessage('client-request-message','Votre demande a été envoyée. Le dossier est maintenant visible dans votre espace.',true);await loadClientServices();}catch(error){setMessage('client-request-message',adminErrorText(error));}}
+async function loadClientServices(){const box=document.getElementById('client-service-list'),user=await getSessionUser();if(!box||!user)return;const {data,error}=await ensureSupabase().from('service_requests').select('id,service_name,description,status,priority,amount,payment_status,admin_note,updated_at').eq('client_id',user.id).order('updated_at',{ascending:false});if(error){box.innerHTML=`<div class="empty">${esc(clientErrorText(error))}</div>`;return;}box.innerHTML=(data||[]).length?(data||[]).map(renderClientService).join(''):'<div class="empty">Aucun dossier pour le moment.</div>';}
+async function createClientRequest(event){event?.preventDefault();try{const user=await getSessionUser();if(!user)throw new Error('Connectez-vous avant d’envoyer une demande.');const service_name=document.getElementById('client-request-service')?.value;const priority=document.getElementById('client-request-priority')?.value||'normal';const description=document.getElementById('client-request-description')?.value.trim();if(!service_name||!description)throw new Error('Choisissez un service et décrivez votre besoin.');const {error}=await ensureSupabase().from('service_requests').insert({client_id:user.id,service_name,description,priority,status:'Demande reçue',payment_status:'Non payé'});if(error)throw error;event.target.reset();setMessage('client-request-message','Votre demande a été envoyée. Le dossier est maintenant visible dans votre espace.',true);await loadClientServices();}catch(error){setMessage('client-request-message',clientErrorText(error));}}
 
 /* ---------- CLIENT MESSAGES ---------- */
 function renderMessage(x,currentUserId){const isAdmin=x.sender_id!==currentUserId;return `<div class="client-message ${isAdmin?'admin':'client'}"><small>${isAdmin?'Administration':'Vous'} · ${esc(formatDate(x.created_at))}</small><div style="white-space:pre-wrap">${esc(x.message||'')}</div></div>`;}
-async function loadClientMessages(){const box=document.getElementById('client-message-list'),user=await getSessionUser();if(!box||!user)return;const {data,error}=await ensureSupabase().from('client_messages').select('id,client_id,sender_id,message,is_read,created_at').eq('client_id',user.id).order('created_at',{ascending:true});if(error){box.innerHTML=`<div class="empty">${esc(adminErrorText(error))}</div>`;return;}box.innerHTML=(data||[]).length?data.map(x=>renderMessage(x,user.id)).join(''):'<div class="empty">Aucun message.</div>';box.scrollTop=box.scrollHeight;}
-async function sendClientMessage(event){event?.preventDefault();try{const user=await getSessionUser();const message=document.getElementById('client-message-input')?.value.trim();if(!user||!message)throw new Error('Écrivez un message.');const {error}=await ensureSupabase().from('client_messages').insert({client_id:user.id,sender_id:user.id,message,is_read:false});if(error)throw error;event.target.reset();await loadClientMessages();}catch(error){alert(adminErrorText(error));}}
+async function loadClientMessages(){const box=document.getElementById('client-message-list'),user=await getSessionUser();if(!box||!user)return;const {data,error}=await ensureSupabase().from('client_messages').select('id,client_id,sender_id,message,is_read,created_at').eq('client_id',user.id).order('created_at',{ascending:true});if(error){box.innerHTML=`<div class="empty">${esc(clientErrorText(error))}</div>`;return;}box.innerHTML=(data||[]).length?data.map(x=>renderMessage(x,user.id)).join(''):'<div class="empty">Aucun message.</div>';box.scrollTop=box.scrollHeight;}
+async function sendClientMessage(event){event?.preventDefault();try{const user=await getSessionUser();const message=document.getElementById('client-message-input')?.value.trim();if(!user||!message)throw new Error('Écrivez un message.');const {error}=await ensureSupabase().from('client_messages').insert({client_id:user.id,sender_id:user.id,message,is_read:false});if(error)throw error;event.target.reset();await loadClientMessages();}catch(error){alert(clientErrorText(error));}}
 
 async function showClientDashboard(user){
  adminViewActive=false;
@@ -1237,12 +1243,12 @@ async function signInClient(email,password){
    }else{
      await showClientDashboard(data.user);
    }
- }catch(error){alert(adminErrorText(error));}
+ }catch(error){alert(clientErrorText(error));}
  finally{authBusy=false;}
 }
-async function registerClient(name,email,phone,password,confirm){if(!name.trim())return alert('Indiquez votre nom et prénom.');if(password!==confirm)return alert('Les mots de passe ne correspondent pas.');if(password.length<6)return alert('Le mot de passe doit contenir au moins 6 caractères.');if(authBusy)return;authBusy=true;try{const {data,error}=await ensureSupabase().auth.signUp({email:normalizeEmail(email),password,options:{data:{full_name:name.trim(),phone:phone.trim()}}});if(error)throw error;if(data.session&&data.user)await showClientDashboard(data.user);else{alert('Compte créé. Consultez votre e-mail pour confirmer votre adresse.');go('login');}}catch(error){alert(adminErrorText(error));}finally{authBusy=false;}}
-async function sendResetEmail(email){email=normalizeEmail(email);if(!email)return alert('Saisissez votre adresse e-mail.');try{const {error}=await ensureSupabase().auth.resetPasswordForEmail(email,{redirectTo:window.location.origin+window.location.pathname});if(error)throw error;alert('Le lien de réinitialisation a été envoyé.');go('login');}catch(error){alert(adminErrorText(error));}}
-async function updateRecoveredPassword(password,confirm){if(password!==confirm)return alert('Les mots de passe ne correspondent pas.');if(password.length<6)return alert('Le mot de passe doit contenir au moins 6 caractères.');try{const {error}=await ensureSupabase().auth.updateUser({password});if(error)throw error;passwordRecoveryActive=false;alert('Mot de passe modifié.');await signOut();}catch(error){alert(adminErrorText(error));}}
+async function registerClient(name,email,phone,password,confirm){if(!name.trim())return alert('Indiquez votre nom et prénom.');if(password!==confirm)return alert('Les mots de passe ne correspondent pas.');if(password.length<6)return alert('Le mot de passe doit contenir au moins 6 caractères.');if(authBusy)return;authBusy=true;try{const {data,error}=await ensureSupabase().auth.signUp({email:normalizeEmail(email),password,options:{data:{full_name:name.trim(),phone:phone.trim()}}});if(error)throw error;if(data.session&&data.user)await showClientDashboard(data.user);else{alert('Compte créé. Consultez votre e-mail pour confirmer votre adresse.');go('login');}}catch(error){alert(clientErrorText(error));}finally{authBusy=false;}}
+async function sendResetEmail(email){email=normalizeEmail(email);if(!email)return alert('Saisissez votre adresse e-mail.');try{const {error}=await ensureSupabase().auth.resetPasswordForEmail(email,{redirectTo:window.location.origin+window.location.pathname});if(error)throw error;alert('Le lien de réinitialisation a été envoyé.');go('login');}catch(error){alert(clientErrorText(error));}}
+async function updateRecoveredPassword(password,confirm){if(password!==confirm)return alert('Les mots de passe ne correspondent pas.');if(password.length<6)return alert('Le mot de passe doit contenir au moins 6 caractères.');try{const {error}=await ensureSupabase().auth.updateUser({password});if(error)throw error;passwordRecoveryActive=false;alert('Mot de passe modifié.');await signOut();}catch(error){alert(clientErrorText(error));}}
 
 /* ---------- ADMIN : DOSSIERS ---------- */
 async function createServiceRequest(event){event?.preventDefault();try{if(!currentAdminContext)currentAdminContext=await requireAdmin();const email=normalizeEmail(document.getElementById('new-client-email')?.value);const service_name=document.getElementById('new-service-name')?.value.trim();const status=document.getElementById('new-status')?.value||'Demande reçue';const priority=document.getElementById('new-priority')?.value||'normal';const payment_status=document.getElementById('new-payment')?.value||'Non payé';const raw=document.getElementById('new-amount')?.value||'';const amount=raw===''?null:Number(raw);const description=document.getElementById('new-description')?.value.trim()||null;const admin_note=document.getElementById('new-note')?.value.trim()||null;if(!email||!service_name)throw new Error('Indiquez l’e-mail du client et le service.');if(amount!==null&&(!Number.isFinite(amount)||amount<0))throw new Error('Montant invalide.');const {data:profile,error:pe}=await ensureSupabase().from('profiles').select('id,email,role').ilike('email',email).maybeSingle();if(pe)throw pe;if(!profile)throw new Error('Aucun compte client trouvé avec cet e-mail.');if(profile.role==='admin')throw new Error('Ce compte est administrateur.');const {error}=await ensureSupabase().from('service_requests').insert({client_id:profile.id,service_name,description,status,priority,amount,payment_status,admin_note});if(error)throw error;event.target.reset();setMessage('admin-create-message','Dossier créé avec succès.',true);await loadAdminServices();}catch(error){setMessage('admin-create-message',adminErrorText(error));}}
@@ -1719,7 +1725,7 @@ if (authorized) {
         go("login");
       }
     }catch(error){
-      alert(adminErrorText(error));
+      alert(clientErrorText(error));
     }finally{
       authBusy=false;
     }
@@ -1747,7 +1753,7 @@ if (authorized) {
         await showClientDashboard(data.user);
       }
     }catch(error){
-      alert(adminErrorText(error));
+      alert(clientErrorText(error));
     }finally{
       authBusy=false;
     }
@@ -1763,7 +1769,7 @@ if (authorized) {
       hidePrivatePages();
       go("home");
     }catch(error){
-      alert(adminErrorText(error));
+      alert(clientErrorText(error));
     }
   }
 
@@ -1779,7 +1785,7 @@ if (authorized) {
       alert("Le lien de réinitialisation a été envoyé à votre adresse e-mail.");
       go("login");
     }catch(error){
-      alert(adminErrorText(error));
+      alert(clientErrorText(error));
     }
   }
 
@@ -1794,7 +1800,7 @@ if (authorized) {
       alert("Mot de passe modifié avec succès.");
       await authLogout();
     }catch(error){
-      alert(adminErrorText(error));
+      alert(clientErrorText(error));
     }
   }
 
