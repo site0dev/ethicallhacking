@@ -398,7 +398,7 @@ footer{background:#050b15;color:#aeb8c8;padding:35px 0}
  <div class="admin-login-box" role="dialog" aria-modal="true" aria-labelledby="admin-login-title">
   <span class="eyebrow">Accès sécurisé</span>
   <h2 id="admin-login-title">Administration</h2>
-  <p>Connexion avec le compte administrateur Supabase.</p>
+  <p>Connexion à votre espace d’administration.</p>
   <form id="admin-login-form">
    <div class="field"><label for="admin-email">Adresse e-mail</label><input id="admin-email" type="email" autocomplete="username" required></div>
    <div class="field" style="margin-top:14px"><label for="admin-password">Mot de passe</label><input id="admin-password" type="password" autocomplete="current-password" required></div>
@@ -1051,11 +1051,13 @@ function ensureSupabase(){if(!supabaseClient)throw new Error('Le service est tem
 function adminErrorText(error){
  const raw=String(error?.message||error||'').trim();
  if(!raw)return 'Une erreur est survenue. Veuillez réessayer.';
- if(/Invalid login credentials/i.test(raw))return 'E-mail ou mot de passe incorrect.';
- if(/Email not confirmed/i.test(raw))return 'Votre adresse e-mail n’est pas encore confirmée. Consultez votre boîte e-mail pour terminer l’activation de votre compte.';
- if(/Failed to fetch|NetworkError|fetch/i.test(raw))return 'Impossible de contacter le service. Vérifiez votre connexion Internet puis réessayez.';
- if(/row-level security|permission denied|not authorized|JWT|supabase|schema cache|relation|postgres|database|RLS/i.test(raw))return 'Votre demande ne peut pas être traitée pour le moment. Veuillez réessayer.';
- return 'Une erreur est survenue. Veuillez réessayer.';
+ if(/Invalid login credentials/i.test(raw))return 'Adresse e-mail ou mot de passe administrateur incorrect.';
+ if(/Email not confirmed/i.test(raw))return 'L’adresse e-mail du compte administrateur n’est pas encore confirmée.';
+ if(/Failed to fetch|NetworkError|fetch/i.test(raw))return 'Le service est temporairement indisponible. Vérifiez votre connexion Internet puis réessayez.';
+ if(/row-level security|permission denied|not authorized|JWT|supabase|schema cache|relation|postgres|database|RLS/i.test(raw))return 'L’accès à l’administration n’a pas pu être vérifié. Vérifiez les identifiants et les droits administrateur.';
+ if(/n.?a pas le rôle administrateur|rôle administrateur|profil public/i.test(raw))return 'Ce compte ne dispose pas des droits administrateur.';
+ if(/timeout|expiré/i.test(raw))return 'La vérification de l’administration a pris trop de temps. Veuillez réessayer.';
+ return 'Impossible de se connecter à l’administration. Vérifiez les identifiants puis réessayez.';
 }
 function withTimeout(promise,ms,message){let timer;return Promise.race([promise,new Promise((_,reject)=>timer=setTimeout(()=>reject(new Error(message)),ms))]).finally(()=>clearTimeout(timer));}
 function setMessage(id,text,ok=false){const el=document.getElementById(id);if(!el)return;el.textContent=text||'';el.className='muted '+(ok?'admin-success':'');}
@@ -1124,6 +1126,9 @@ async function requireAdmin(){return getAdminContext();}
 
 async function adminSubmitLogin(event){
  event?.preventDefault();if(authBusy)return false;
+ clientViewActive=false;
+ adminViewActive=false;
+ updateAuthUI();
  const email=normalizeEmail(document.getElementById('admin-email')?.value),password=document.getElementById('admin-password')?.value||'';
  const button=document.getElementById('admin-login-submit');if(!email||!password){showAdminError(new Error('Veuillez saisir l’adresse e-mail et le mot de passe.'));return false;}
  authBusy=true;if(button){button.disabled=true;button.textContent='Connexion…';}
@@ -1133,9 +1138,18 @@ async function adminSubmitLogin(event){
   if(error)throw error;if(!data?.user)throw new Error('Utilisateur non retourné par le service.');
   adminStage('Vérification du rôle administrateur…');
   const admin=await getAdminContext(data.user);
-  currentAdminContext=admin;adminViewActive=true;
-  await openAdminDashboard(admin);closeAdminLogin();
- }catch(error){adminViewActive=false;showAdminError(error);}finally{authBusy=false;if(button){button.disabled=false;button.textContent='Se connecter';}}
+  currentAdminContext=admin;
+  adminViewActive=true;
+  clientViewActive=false;
+  await openAdminDashboard(admin);
+  closeAdminLogin();
+  updateAuthUI();
+ }catch(error){
+  adminViewActive=false;
+  clientViewActive=false;
+  updateAuthUI();
+  showAdminError(error);
+ }finally{authBusy=false;if(button){button.disabled=false;button.textContent='Se connecter';}}
  return false;
 }
 
