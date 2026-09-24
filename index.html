@@ -741,7 +741,10 @@ footer{background:#050b15;color:#aeb8c8;padding:35px 0}
     <span class="eyebrow" data-i18n="dashboardEyebrow">Espace personnel</span>
     <h2 data-i18n="dashboardTitle">Mon espace</h2>
    </div>
-   <button class="btn dark" onclick="signOut()"><i class="fa-solid fa-right-from-bracket"></i> Déconnexion</button>
+   <div class="admin-mini-actions" style="margin-top:0">
+    <button class="btn outline" type="button" onclick="refreshClientDashboard()"><i class="fa-solid fa-rotate"></i> Actualiser</button>
+    <button class="btn dark" type="button" onclick="signOut()"><i class="fa-solid fa-right-from-bracket"></i> Déconnexion</button>
+   </div>
   </div>
 
   <div class="dash-grid">
@@ -798,7 +801,7 @@ footer{background:#050b15;color:#aeb8c8;padding:35px 0}
 .admin-page-head{display:flex;justify-content:space-between;align-items:end;gap:20px;margin-bottom:24px}
 .admin-page-head h2{font-family:var(--serif);font-size:clamp(2.4rem,5vw,4rem);margin:8px 0 4px}
 .admin-page-head p{margin:0;color:var(--muted)}
-.admin-stat-grid{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:10px;margin-bottom:18px}
+.admin-stat-grid{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:10px;margin-bottom:18px}
 .admin-stat-card{background:#fff;border:1px solid var(--line);padding:16px}
 .admin-stat-card span{display:block;color:var(--muted);font-size:.68rem;text-transform:uppercase;letter-spacing:.07em;font-weight:700}
 .admin-stat-card strong{display:block;margin-top:5px;font-family:var(--serif);font-size:1.8rem}
@@ -807,7 +810,7 @@ footer{background:#050b15;color:#aeb8c8;padding:35px 0}
 .gallery-admin-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
 .gallery-admin-item{border:1px solid var(--line);background:#fff;overflow:hidden}
 .gallery-admin-body{padding:12px}
-@media(max-width:900px){.admin-stat-grid{grid-template-columns:repeat(3,minmax(0,1fr))}.gallery-admin-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.admin-two{grid-template-columns:1fr}}
+@media(max-width:1100px){.admin-stat-grid{grid-template-columns:repeat(3,minmax(0,1fr))}.gallery-admin-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.admin-two{grid-template-columns:1fr}}
 @media(max-width:600px){.admin-page-wrap{padding:35px 0 55px}.admin-page-head{display:block}.admin-page-head .btn{margin-top:14px}.admin-stat-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.gallery-admin-grid{grid-template-columns:1fr}}
 </style>
 
@@ -829,7 +832,8 @@ footer{background:#050b15;color:#aeb8c8;padding:35px 0}
     <div class="admin-stat-card"><span>Clients</span><strong id="stat-clients">0</strong></div>
     <div class="admin-stat-card"><span>Dossiers</span><strong id="stat-services">0</strong></div>
     <div class="admin-stat-card"><span>En cours</span><strong id="stat-progress">0</strong></div>
-    <div class="admin-stat-card"><span>Messages</span><strong id="stat-messages">0</strong></div>
+    <div class="admin-stat-card"><span>Messages contact</span><strong id="stat-messages">0</strong></div>
+    <div class="admin-stat-card"><span>Messages clients</span><strong id="stat-client-messages">0</strong></div>
     <div class="admin-stat-card"><span>Services actifs</span><strong id="stat-public-services">0</strong></div>
    </div>
 
@@ -1435,6 +1439,17 @@ function renderMessage(x,currentUserId){const isAdmin=x.sender_id!==currentUserI
 async function loadClientMessages(){const box=document.getElementById('client-message-list'),user=await getSessionUser();if(!box||!user)return;const {data,error}=await ensureSupabase().from('client_messages').select('id,client_id,sender_id,message,is_read,created_at').eq('client_id',user.id).order('created_at',{ascending:true});if(error){box.innerHTML=`<div class="empty">${esc(clientErrorText(error))}</div>`;return;}box.innerHTML=(data||[]).length?data.map(x=>renderMessage(x,user.id)).join(''):'<div class="empty">Aucun message.</div>';box.scrollTop=box.scrollHeight;}
 async function sendClientMessage(event){event?.preventDefault();try{const user=await getSessionUser();const message=document.getElementById('client-message-input')?.value.trim();if(!user||!message)throw new Error('Écrivez un message.');const {error}=await ensureSupabase().from('client_messages').insert({client_id:user.id,sender_id:user.id,message,is_read:false});if(error)throw error;event.target.reset();await loadClientMessages();}catch(error){alert(clientErrorText(error));}}
 
+async function refreshClientDashboard(){
+ try{
+  const user=await getSessionUser();
+  if(!user){go('login');return;}
+  await showClientDashboard(user);
+  setMessage('client-request-message','Espace client actualisé.',true);
+ }catch(error){
+  alert(clientErrorText(error));
+ }
+}
+
 async function showClientDashboard(user){
  adminViewActive=false;
  clientViewActive=true;
@@ -1474,7 +1489,7 @@ async function updateService(id){try{if(!currentAdminContext)currentAdminContext
 async function deleteService(id){if(!confirm('Supprimer définitivement ce dossier ?'))return;try{const {error}=await ensureSupabase().from('service_requests').delete().eq('id',id);if(error)throw error;await refreshAdmin();}catch(error){alert(adminErrorText(error));}}
 
 /* ---------- ADMIN : CLIENTS ---------- */
-async function loadAdminClients(){const box=document.getElementById('adminClients');if(!box)return[];const {data,error}=await ensureSupabase().from('profiles').select('id,email,full_name,phone,role,created_at').order('created_at',{ascending:false});if(error){box.innerHTML=`<div class="empty">${esc(adminErrorText(error))}</div>`;throw error;}const clients=(data||[]).filter(x=>x.role==='client');document.getElementById('stat-clients')?.replaceChildren(document.createTextNode(String(clients.length)));const sel=document.getElementById('admin-message-client');if(sel)sel.innerHTML='<option value="">Choisir un client</option>'+clients.map(x=>`<option value="${esc(x.id)}">${esc(x.full_name||x.email||'Client')}</option>`).join('');box.innerHTML=clients.length?`<div class="admin-list">${clients.map(x=>`<div class="admin-service"><strong>${esc(x.full_name||'Client sans nom')}</strong><br><small>${esc(x.email||'')}</small>${x.phone?`<br><small>${esc(x.phone)}</small>`:''}<br><small>Inscrit : ${esc(formatDate(x.created_at))}</small><div class="admin-mini-actions"><button class="btn outline" type="button" onclick="switchAdminTab('dossiers');document.getElementById('new-client-email').value='${esc(x.email||'')}'">Créer un dossier</button><button class="btn outline" type="button" onclick="selectAdminClient('${esc(x.id)}')">Écrire</button></div></div>`).join('')}</div>`:'<div class="empty">Aucun client.</div>';return clients;}
+async function loadAdminClients(){const box=document.getElementById('adminClients');if(!box)return[];const {data,error}=await ensureSupabase().from('profiles').select('id,email,full_name,phone,role,created_at').order('created_at',{ascending:false});if(error){box.innerHTML=`<div class="empty">${esc(adminErrorText(error))}</div>`;throw error;}const clients=(data||[]).filter(x=>x.role==='client');document.getElementById('stat-clients')?.replaceChildren(document.createTextNode(String(clients.length)));const sel=document.getElementById('admin-message-client');if(sel)sel.innerHTML='<option value="">Choisir un client</option>'+clients.map(x=>`<option value="${esc(x.id)}">${esc(x.full_name||x.email||'Client')}</option>`).join('');box.innerHTML=clients.length?`<div class="admin-list">${clients.map(x=>`<div class="admin-service"><strong>${esc(x.full_name||'Client sans nom')}</strong><br><small>${esc(x.email||'')}</small>${x.phone?`<br><small>${esc(x.phone)}</small>`:''}<br><small>Inscrit : ${esc(formatDate(x.created_at))}</small><div class="admin-mini-actions"><button class="btn outline" type="button" onclick="switchAdminTab('dossiers');document.getElementById('new-client-email').value=decodeURIComponent('${encodeURIComponent(x.email||'')}')">Créer un dossier</button><button class="btn outline" type="button" onclick="selectAdminClient('${esc(x.id)}')">Écrire</button></div></div>`).join('')}</div>`:'<div class="empty">Aucun client.</div>';return clients;}
 
 /* ---------- ADMIN : MESSAGES ---------- */
 async function loadAdminMessages(){const box=document.getElementById('adminMessages');if(!box)return[];const {data,error}=await ensureSupabase().from('contact_messages').select('id,name,email,subject,message,is_read,created_at').order('created_at',{ascending:false});if(error){box.innerHTML=`<div class="empty">${esc(adminErrorText(error))}</div>`;throw error;}const rows=data||[];document.getElementById('stat-messages')?.replaceChildren(document.createTextNode(String(rows.length)));box.innerHTML=rows.length?rows.map(x=>`<div class="admin-service"><div class="admin-service-head"><div><strong>${esc(x.subject||'Message')}</strong><br><small>${esc(x.name||'')} — ${esc(x.email||'')}</small></div><small>${esc(formatDate(x.created_at))}</small></div><p style="white-space:pre-wrap">${esc(x.message||'')}</p></div>`).join(''):'<div class="empty">Aucun message.</div>';return rows;}
@@ -1565,7 +1580,7 @@ async function savePublicService(event){event.preventDefault();try{const id=docu
 async function deletePublicService(id){if(!confirm('Supprimer ce service ?'))return;try{const {error}=await ensureSupabase().from('services').delete().eq('id',id);if(error)throw error;await loadPublicServicesAdmin();await loadPublicServicesForClient();}catch(error){alert(adminErrorText(error));}}
 
 /* ---------- ADMIN : GALERIE ---------- */
-async function loadGalleryAdmin(){const box=document.getElementById('gallery-admin-grid');if(!box)return;const {data,error}=await ensureSupabase().from('models').select('id,name,description,image_url,category,display_order,is_active,created_at,updated_at').order('display_order',{ascending:true});if(error){box.innerHTML=`<div class="empty">${esc(adminErrorText(error))}</div>`;throw error;}const rows=data||[];box.innerHTML=rows.length?rows.map((x,i)=>`<div class="gallery-admin-item"><img class="admin-photo" src="${esc(x.image_url||'')}" alt="${esc(x.name||'Photo '+(i+1))}"><div class="gallery-admin-body"><strong>${esc(x.name||'Photo')}</strong><p class="muted">${esc(x.description||'')}</p><div class="admin-mini-actions"><button class="btn outline admin-danger" type="button" onclick="deleteGalleryItem('${esc(x.id)}','${esc(x.image_url||'')}')">Supprimer</button></div></div></div>`).join(''):'<div class="empty">Aucune photo.</div>';}
+async function loadGalleryAdmin(){const box=document.getElementById('gallery-admin-grid');if(!box)return;const {data,error}=await ensureSupabase().from('models').select('id,name,description,image_url,category,display_order,is_active,created_at,updated_at').order('display_order',{ascending:true});if(error){box.innerHTML=`<div class="empty">${esc(adminErrorText(error))}</div>`;throw error;}const rows=data||[];box.innerHTML=rows.length?rows.map((x,i)=>`<div class="gallery-admin-item"><img class="admin-photo" src="${esc(x.image_url||'')}" alt="${esc(x.name||'Photo '+(i+1))}"><div class="gallery-admin-body"><strong>${esc(x.name||'Photo')}</strong><p class="muted">${esc(x.description||'')}</p><div class="admin-mini-actions"><button class="btn outline admin-danger" type="button" onclick="deleteGalleryItem('${esc(x.id)}',decodeURIComponent('${encodeURIComponent(x.image_url||'')}'))">Supprimer</button></div></div></div>`).join(''):'<div class="empty">Aucune photo.</div>';}
 async function uploadGalleryFiles(){const input=document.getElementById('gallery-upload');const files=[...(input?.files||[])];if(!files.length)return setMessage('gallery-message','Choisissez au moins une image.');try{let order=0;const r=await ensureSupabase().from('models').select('display_order').order('display_order',{ascending:false}).limit(1);if(!r.error&&r.data?.[0])order=Number(r.data[0].display_order||0)+1;for(const file of files){const safe=file.name.toLowerCase().replace(/[^a-z0-9._-]/g,'-');const path=`gallery/${crypto.randomUUID()}-${safe}`;const up=await ensureSupabase().storage.from('models').upload(path,file,{upsert:false,contentType:file.type||'image/*'});if(up.error)throw up.error;const pub=ensureSupabase().storage.from('models').getPublicUrl(path);const ins=await ensureSupabase().from('models').insert({name:file.name.replace(/\.[^.]+$/,''),image_url:pub.data.publicUrl,display_order:order++,is_active:true});if(ins.error)throw ins.error;}input.value='';setMessage('gallery-message','Photos ajoutées.',true);await loadGalleryAdmin();}catch(error){setMessage('gallery-message',adminErrorText(error));}}
 async function deleteGalleryItem(id,url){if(!confirm('Supprimer cette photo ?'))return;try{const marker='/storage/v1/object/public/models/';const i=String(url||'').indexOf(marker);if(i>=0){const path=decodeURIComponent(String(url).slice(i+marker.length).split('?')[0]);await ensureSupabase().storage.from('models').remove([path]);}const {error}=await ensureSupabase().from('models').delete().eq('id',id);if(error)throw error;await loadGalleryAdmin();}catch(error){alert(adminErrorText(error));}}
 
@@ -1632,20 +1647,22 @@ async function initializeSession(){
 
 /* ---------- DOM ---------- */
 document.addEventListener('DOMContentLoaded',()=>{
- document.getElementById('admin-login-form')?.addEventListener('submit',adminSubmitLogin);
  document.getElementById('admin-login-modal')?.addEventListener('click',e=>{if(e.target.id==='admin-login-modal')closeAdminLogin();});
  document.addEventListener('keydown',e=>{if(e.key==='Escape')closeAdminLogin();});
- document.getElementById('login-form')?.addEventListener('submit',e=>{e.preventDefault();signInClient(document.getElementById('login-email')?.value,document.getElementById('login-password')?.value);});
- document.getElementById('forgot-form')?.addEventListener('submit',e=>{e.preventDefault();sendResetEmail(document.getElementById('forgot-email')?.value);});
- document.getElementById('reset-form')?.addEventListener('submit',e=>{e.preventDefault();updateRecoveredPassword(document.getElementById('new-password')?.value,document.getElementById('confirm-new-password')?.value);});
- document.getElementById('register-form')?.addEventListener('submit',e=>{e.preventDefault();const i=e.target.querySelectorAll('input');registerClient(i[0]?.value||'',i[1]?.value||'',i[2]?.value||'',i[3]?.value||'',i[4]?.value||'');});
- document.getElementById('client-request-form')?.addEventListener('submit',createClientRequest);
- document.getElementById('client-message-form')?.addEventListener('submit',sendClientMessage);
- document.getElementById('admin-create-form')?.addEventListener('submit',createServiceRequest);
- document.getElementById('admin-service-form')?.addEventListener('submit',savePublicService);
- document.getElementById('method-form')?.addEventListener('submit',saveMethod);
- document.getElementById('contact-settings-form')?.addEventListener('submit',saveContactSettings);
- document.getElementById('admin-client-message-form')?.addEventListener('submit',sendAdminClientMessage);
+ const bind=(id,handler)=>{const el=document.getElementById(id);if(el&&!el.dataset.handlerBound){el.dataset.handlerBound='1';el.addEventListener('submit',handler);}};
+ const adminLogin=document.getElementById('admin-login-form');
+ if(adminLogin&&!adminLogin.dataset.handlerBound){adminLogin.dataset.handlerBound='1';adminLogin.addEventListener('submit',adminSubmitLogin);}
+ bind('login-form',e=>{e.preventDefault();signInClient(document.getElementById('login-email')?.value,document.getElementById('login-password')?.value);});
+ bind('forgot-form',e=>{e.preventDefault();sendResetEmail(document.getElementById('forgot-email')?.value);});
+ bind('reset-form',e=>{e.preventDefault();updateRecoveredPassword(document.getElementById('new-password')?.value,document.getElementById('confirm-new-password')?.value);});
+ bind('register-form',e=>{e.preventDefault();const i=e.target.querySelectorAll('input');registerClient(i[0]?.value||'',i[1]?.value||'',i[2]?.value||'',i[3]?.value||'',i[4]?.value||'');});
+ bind('client-request-form',createClientRequest);
+ bind('client-message-form',sendClientMessage);
+ bind('admin-create-form',createServiceRequest);
+ bind('admin-service-form',savePublicService);
+ bind('method-form',saveMethod);
+ bind('contact-settings-form',saveContactSettings);
+ bind('admin-client-message-form',sendAdminClientMessage);
  document.getElementById('admin-message-client')?.addEventListener('change',e=>selectAdminClient(e.target.value));
  document.querySelectorAll('.admin-tabs button').forEach(b=>b.addEventListener('click',()=>switchAdminTab(b.dataset.adminTab)));
  applyPublicSiteContent();
@@ -2024,8 +2041,8 @@ if (authorized) {
      Les fonctions existantes restent intactes dans le fichier. */
   function bindAuth(){
     const login=document.getElementById("login-form");
-    if(login && !login.dataset.eurAuthBound){
-      login.dataset.eurAuthBound="1";
+    if(login && !login.dataset.handlerBound){
+      login.dataset.handlerBound="1";
       login.addEventListener("submit",e=>{
         e.preventDefault();
         authLogin(
@@ -2036,8 +2053,8 @@ if (authorized) {
     }
 
     const register=document.getElementById("register-form");
-    if(register && !register.dataset.eurAuthBound){
-      register.dataset.eurAuthBound="1";
+    if(register && !register.dataset.handlerBound){
+      register.dataset.handlerBound="1";
       register.addEventListener("submit",e=>{
         e.preventDefault();
         const i=e.target.querySelectorAll("input");
@@ -2046,8 +2063,8 @@ if (authorized) {
     }
 
     const forgot=document.getElementById("forgot-form");
-    if(forgot && !forgot.dataset.eurAuthBound){
-      forgot.dataset.eurAuthBound="1";
+    if(forgot && !forgot.dataset.handlerBound){
+      forgot.dataset.handlerBound="1";
       forgot.addEventListener("submit",e=>{
         e.preventDefault();
         authForgot(document.getElementById("forgot-email")?.value||"");
@@ -2055,8 +2072,8 @@ if (authorized) {
     }
 
     const reset=document.getElementById("reset-form");
-    if(reset && !reset.dataset.eurAuthBound){
-      reset.dataset.eurAuthBound="1";
+    if(reset && !reset.dataset.handlerBound){
+      reset.dataset.handlerBound="1";
       reset.addEventListener("submit",e=>{
         e.preventDefault();
         authReset(
