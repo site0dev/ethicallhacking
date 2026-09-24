@@ -1062,9 +1062,6 @@ function clientErrorText(error){
  if(/Contexte administrateur invalide|Page administration absente/i.test(raw))return 'L’espace d’administration n’a pas pu être ouvert. Veuillez réessayer.';
  return 'Impossible de se connecter à l’administration. Vérifiez les identifiants puis réessayez.';
 }
-function clientErrorText(error){
- return 'Une erreur est survenue. Veuillez réessayer.';
-}
 function withTimeout(promise,ms,message){let timer;return Promise.race([promise,new Promise((_,reject)=>timer=setTimeout(()=>reject(new Error(message)),ms))]).finally(()=>clearTimeout(timer));}
 function setMessage(id,text,ok=false){const el=document.getElementById(id);if(!el)return;el.textContent=text||'';el.className='muted '+(ok?'admin-success':'');}
 function hidePrivatePages(){
@@ -1120,14 +1117,49 @@ function updateAuthUI(){
 /* ---------- ADMIN LOGIN : 3 CLICS ---------- */
 function clearAdminError(){const e=document.getElementById('admin-login-error');if(e){e.textContent='';e.style.display='none';}}
 function adminStage(text,ok=true){const e=document.getElementById('admin-login-error');if(!e)return;e.style.display='block';e.style.color=ok?'var(--ok)':'var(--danger)';e.textContent=text;}
-function showAdminError(error){const msg=clientErrorText(error);console.error('[ADMIN]',error);const e=document.getElementById('admin-login-error');if(e){e.style.display='block';e.style.color='var(--danger)';e.textContent=msg;}document.getElementById('admin-login-modal')?.classList.add('open');return msg;}
+function showAdminError(error){
+ const raw=String(error?.message||error||'Erreur inconnue').trim();
+ const code=String(error?.code||'').trim();
+ const details=String(error?.details||'').trim();
+ const hint=String(error?.hint||'').trim();
+ const msg=clientErrorText(error);
+ console.error('[ADMIN LOGIN ERROR]',{message:raw,code,details,hint,error});
+ const e=document.getElementById('admin-login-error');
+ if(e){
+   e.style.display='block';
+   e.style.color='var(--danger)';
+   e.innerHTML='';
+   const main=document.createElement('div');
+   main.textContent=msg;
+   e.appendChild(main);
+   if(raw && raw!==msg){
+     const debug=document.createElement('details');
+     debug.style.marginTop='10px';
+     const summary=document.createElement('summary');
+     summary.textContent='Détails techniques';
+     const pre=document.createElement('pre');
+     pre.style.whiteSpace='pre-wrap';
+     pre.style.fontSize='.72rem';
+     pre.style.margin='8px 0 0';
+     pre.textContent=[code&&('code: '+code),raw,details&&('details: '+details),hint&&('hint: '+hint)].filter(Boolean).join('\n');
+     debug.appendChild(summary);
+     debug.appendChild(pre);
+     e.appendChild(debug);
+   }
+ }
+ document.getElementById('admin-login-modal')?.classList.add('open');
+ return msg;
+}
 function openAdminLogin(){const m=document.getElementById('admin-login-modal');if(!m)return;clearAdminError();m.classList.add('open');m.setAttribute('aria-hidden','false');setTimeout(()=>document.getElementById('admin-email')?.focus(),40);}
 function closeAdminLogin(){const m=document.getElementById('admin-login-modal');if(!m)return;m.classList.remove('open');m.setAttribute('aria-hidden','true');document.getElementById('admin-login-form')?.reset();clearAdminError();}
 function adminTripleClick(event){event?.preventDefault();event?.stopPropagation();adminClicks++;clearTimeout(adminClickTimer);adminClickTimer=setTimeout(()=>{adminClicks=0;},1200);if(adminClicks===3){adminClicks=0;clearTimeout(adminClickTimer);openAdminLogin();}}
 
 async function getSessionUser(){const {data,error}=await ensureSupabase().auth.getUser();if(error)throw error;return data?.user||null;}
 async function getMyProfile(user){user=user||await getSessionUser();if(!user)return null;const {data,error}=await ensureSupabase().from('profiles').select('id,email,full_name,phone,role,created_at').eq('id',user.id).maybeSingle();if(error)throw error;return data||null;}
-async function getAdminContext(user){user=user||await getSessionUser();if(!user)throw new Error('Aucune session active.');const {data:profile,error}=await withTimeout(ensureSupabase().from('profiles').select('id,email,full_name,phone,role,created_at').eq('id',user.id).maybeSingle(),10000,'La vérification du profil a expiré.');if(error)throw error;if(!profile)throw new Error('Aucun profil public ne correspond à ce compte.');if(profile.role!=='admin')throw new Error('Ce compte n’a pas le rôle administrateur.');return {user,profile};}
+async function getAdminContext(user){user=user||await getSessionUser();if(!user)throw new Error('Aucune session active.');const {data:profile,error}=await withTimeout(ensureSupabase().from('profiles').select('id,email,full_name,phone,role,created_at').eq('id',user.id).maybeSingle(),10000,'La vérification du profil a expiré.');if(error)throw error;
+if(!profile)throw new Error('Aucun profil public ne correspond à ce compte. Vérifiez que le profil existe pour cet utilisateur.');
+if(profile.role!=='admin')throw new Error('Ce compte n’a pas le rôle administrateur.');
+return {user,profile};}
 async function requireAdmin(){return getAdminContext();}
 
 async function adminSubmitLogin(event){
@@ -1137,7 +1169,15 @@ async function adminSubmitLogin(event){
  authBusy=true;if(button){button.disabled=true;button.textContent='Connexion…';}
  try{
   adminStage('Connexion à l’administration…');
-  const {data,error}=await withTimeout(ensureSupabase().auth.signInWithPassword({email,password}),15000,'Le service ne répond pas.');
+  const sb=ensureSupabase();
+  if(!/^https:\/\/[^\s]+\.supabase\.co$/i.test(SUPABASE_URL)){
+    throw new Error('URL Supabase invalide : '+SUPABASE_URL);
+  }
+  const {data,error}=await withTimeout(
+    sb.auth.signInWithPassword({email,password}),
+    15000,
+    'Le service Supabase ne répond pas dans le délai prévu.'
+  );
   if(error)throw error;if(!data?.user)throw new Error('Utilisateur non retourné par le service.');
   adminStage('Vérification des autorisations…');
   const admin=await getAdminContext(data.user);
@@ -1458,424 +1498,6 @@ if(supabaseClient){
 }
 </script>
 </body>
+
+<!-- ADMIN AUTH CLEANUP: single Supabase client + single auth flow -->
 </html>
-
-
-<!-- =========================================================
-     AJOUTS — EURO UNIQUEMENT + HERO CODE + AUTH SUPABASE
-     Ce bloc est ajouté sans supprimer ni remplacer le code existant.
-     ========================================================= -->
-<style id="ethicall-additions">
-/* HERO : arrière-plan animé de code */
-.hero{
-  position:relative;
-  isolation:isolate;
-  overflow:hidden;
-  background:
-    linear-gradient(100deg,rgba(8,15,35,.94),rgba(20,30,70,.90) 52%,rgba(10,18,38,.94)),
-    url("https://images.unsplash.com/photo-1563013544-824ae1b704d3?auto=format&fit=crop&w=1800&q=88")
-    center/cover;
-}
-.hero::before{
-  content:
-`const security = true;
-async function audit(target) {
-  const scope = await defineScope(target);
-  return scan(scope);
-}
-if (authorized) {
-  protect(application);
-  monitor(network);
-  report(findings);
-}
-// ETHICALL HACKING
-// ACCESS GRANTED — AUTHORIZED ONLY
-// authentication / encryption / firewall
-`;
-  position:absolute;
-  inset:-8%;
-  z-index:-1;
-  pointer-events:none;
-  white-space:pre;
-  overflow:hidden;
-  font:500 clamp(11px,1.15vw,16px)/1.8 ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono",monospace;
-  letter-spacing:.04em;
-  color:rgba(120,205,255,.16);
-  transform:rotate(-7deg) scale(1.12);
-  text-shadow:0 0 12px rgba(70,160,255,.08);
-  animation:heroCodeMove 28s linear infinite;
-}
-.hero::after{
-  content:"";
-  position:absolute;
-  inset:0;
-  z-index:-1;
-  pointer-events:none;
-  background:
-    linear-gradient(90deg,rgba(5,10,25,.78),rgba(5,10,25,.18) 60%,rgba(5,10,25,.62)),
-    radial-gradient(circle at 75% 40%,rgba(75,150,255,.12),transparent 38%);
-}
-@keyframes heroCodeMove{
-  0%{transform:rotate(-7deg) translate3d(0,0,0) scale(1.12)}
-  50%{transform:rotate(-7deg) translate3d(-2%,3%,0) scale(1.12)}
-  100%{transform:rotate(-7deg) translate3d(0,0,0) scale(1.12)}
-}
-.hero-inner{position:relative;z-index:1}
-
-/* Paiements : EUR uniquement */
-.eur-only-badge{
-  display:inline-flex;
-  align-items:center;
-  gap:7px;
-  margin-top:7px;
-  padding:5px 9px;
-  border:1px solid #d9c28a;
-  background:#fff8e8;
-  color:#624c24;
-  font-size:.72rem;
-  font-weight:700;
-  border-radius:3px;
-}
-.eur-price{
-  font-weight:700;
-  color:var(--ink);
-}
-</style>
-
-<script>
-(function(){
-  "use strict";
-
-  /* ---------- EURO UNIQUEMENT ---------- */
-  const EUR_LOCALE = "fr-FR";
-  const EUR_CURRENCY = "EUR";
-
-  function formatEUR(value){
-    if(value === null || value === undefined || value === "") return "—";
-    const n = Number(value);
-    if(!Number.isFinite(n)) return String(value);
-    return new Intl.NumberFormat(EUR_LOCALE,{
-      style:"currency",
-      currency:EUR_CURRENCY,
-      minimumFractionDigits:2,
-      maximumFractionDigits:2
-    }).format(n);
-  }
-
-  /* Rend les libellés existants cohérents sans supprimer les champs actuels. */
-  function applyEuroLabels(){
-    document.querySelectorAll("label,small,p,span,div").forEach(el=>{
-      if(!el.children.length){
-        const t = el.textContent || "";
-        if(/\bXOF\b/i.test(t)){
-          el.textContent = t.replace(/\bXOF\b/gi,"EUR");
-        }
-      }
-    });
-
-    const replacements = [
-      ["Prix XOF","Prix en EUR"],
-      ["Montant XOF","Montant en EUR"],
-      ["Montant XOF","Montant en EUR"]
-    ];
-    document.querySelectorAll("label").forEach(el=>{
-      replacements.forEach(([a,b])=>{
-        if(el.textContent.trim() === a) el.textContent = b;
-      });
-    });
-
-    document.querySelectorAll("#service-price,#new-amount").forEach(input=>{
-      input.removeAttribute("step");
-      input.setAttribute("step","0.01");
-      input.setAttribute("min","0");
-      input.setAttribute("inputmode","decimal");
-      input.placeholder = "0,00";
-    });
-
-    const forms = [
-      document.getElementById("admin-service-form"),
-      document.getElementById("admin-create-form")
-    ];
-    forms.forEach(form=>{
-      if(form && !form.querySelector(".eur-only-badge")){
-        const badge=document.createElement("div");
-        badge.className="eur-only-badge";
-        badge.innerHTML='<i class="fa-solid fa-euro-sign"></i> Paiements acceptés en euro uniquement (EUR)';
-        form.appendChild(badge);
-      }
-    });
-  }
-
-  /* ---------- RENDU CLIENT EN EUR ---------- */
-  window.renderClientService = function(x){
-    return `<div class="admin-service">
-      <div class="admin-service-head">
-        <div>
-          <strong>${esc(x.service_name||"Service")}</strong><br>
-          <small>Mis à jour : ${esc(formatDate(x.updated_at))}</small>
-        </div>
-        <span class="status">${esc(x.status||"Demande reçue")}</span>
-      </div>
-      <p>${x.description?esc(x.description):"Aucune description."}</p>
-      <div class="admin-grid-3">
-        <div><small>Priorité</small><br><strong>${esc(x.priority||"normal")}</strong></div>
-        <div><small>Paiement</small><br><strong>${esc(x.payment_status||"Non payé")}</strong></div>
-        <div><small>Montant</small><br><strong class="eur-price">${formatEUR(x.amount)}</strong></div>
-      </div>
-      ${x.admin_note?`<div class="app-message"><strong>Note de l’administration</strong><br>${esc(x.admin_note)}</div>`:""}
-    </div>`;
-  };
-
-  /* ---------- RENDU ADMIN DES DOSSIERS EN EUR ---------- */
-  window.renderAdminService = function(x,client){
-    return `<div class="admin-service">
-      <div class="admin-service-head">
-        <div>
-          <strong>${esc(x.service_name||"Service")}</strong><br>
-          <small>${esc(client?.full_name||"Client")}</small><br>
-          <small>${esc(client?.email||"")}</small><br>
-          <small>Créé : ${esc(formatDate(x.created_at))}</small>
-        </div>
-        <span class="status">${esc(x.status||"Demande reçue")}</span>
-      </div>
-      <p style="white-space:pre-wrap">${esc(x.description||"Aucune description")}</p>
-      <div class="admin-grid-3">
-        <div class="field">
-          <label>Statut</label>
-          <select id="st-${esc(x.id)}">
-            ${ADMIN_STATUSES.map(v=>`<option value="${esc(v)}" ${x.status===v?"selected":""}>${esc(v)}</option>`).join("")}
-          </select>
-        </div>
-        <div class="field">
-          <label>Paiement — EUR uniquement</label>
-          <select id="pay-${esc(x.id)}">
-            ${PAYMENT_STATUSES.map(v=>`<option value="${esc(v)}" ${x.payment_status===v?"selected":""}>${esc(v)}</option>`).join("")}
-          </select>
-        </div>
-        <div class="field">
-          <label>Montant en EUR</label>
-          <input id="amount-${esc(x.id)}" type="number" min="0" step="0.01" inputmode="decimal" value="${x.amount??""}">
-        </div>
-      </div>
-      <div class="field" style="margin-top:10px">
-        <label>Note pour le client</label>
-        <textarea id="note-${esc(x.id)}">${esc(x.admin_note||"")}</textarea>
-      </div>
-      <div class="admin-mini-actions">
-        <button class="btn gold" type="button" onclick="updateService('${esc(x.id)}')">Enregistrer</button>
-        <button class="btn outline admin-danger" type="button" onclick="deleteService('${esc(x.id)}')">Supprimer</button>
-      </div>
-      <small>Montant enregistré : <strong class="eur-price">${formatEUR(x.amount)}</strong> · Mis à jour : ${esc(formatDate(x.updated_at))}</small>
-    </div>`;
-  };
-
-  /* ---------- SERVICES PUBLICS EN EUR ---------- */
-  window.loadPublicServicesAdmin = async function(){
-    const box=document.getElementById("public-services-admin");
-    if(!box) return;
-    try{
-      const {data,error}=await ensureSupabase().from("services")
-        .select("id,name,description,price,image_url,icon,display_order,is_active,created_at,updated_at")
-        .order("display_order",{ascending:true});
-      if(error) throw error;
-
-      const rows=data||[];
-      document.getElementById("stat-public-services")
-        ?.replaceChildren(document.createTextNode(String(rows.filter(x=>x.is_active!==false).length)));
-
-      box.innerHTML=rows.length
-        ? `<div class="admin-list">${rows.map(x=>`
-          <div class="admin-service">
-            <strong>${esc(x.name||"Service")}</strong><br>
-            <small class="eur-price">${x.price==null?"Prix sur demande":formatEUR(x.price)}</small>
-            <p>${esc(x.description||"")}</p>
-            <span class="status">${x.is_active===false?"Inactif":"Actif"}</span>
-            <div class="admin-mini-actions">
-              <button class="btn outline" type="button" onclick='editService("${encodeURIComponent(JSON.stringify(x))}")'>Modifier</button>
-              <button class="btn outline admin-danger" type="button" onclick="deletePublicService('${esc(x.id)}')">Supprimer</button>
-            </div>
-          </div>`).join("")}</div>`
-        : '<div class="empty">Aucun service.</div>';
-    }catch(error){
-      box.innerHTML=`<div class="empty">${esc(adminErrorText(error))}</div>`;
-    }
-  };
-
-  /* ---------- AUTH SUPABASE : inscription / connexion / déconnexion / reset ---------- */
-  async function authRegister(name,email,phone,password,confirm){
-    if(!name.trim()) return alert("Indiquez votre nom et prénom.");
-    if(!email.trim()) return alert("Indiquez votre adresse e-mail.");
-    if(password!==confirm) return alert("Les mots de passe ne correspondent pas.");
-    if(password.length<6) return alert("Le mot de passe doit contenir au moins 6 caractères.");
-    if(authBusy) return;
-
-    authBusy=true;
-    try{
-      const {data,error}=await ensureSupabase().auth.signUp({
-        email:normalizeEmail(email),
-        password,
-        options:{data:{full_name:name.trim(),phone:phone.trim()}}
-      });
-      if(error) throw error;
-
-      if(data?.session && data?.user){
-        await showClientDashboard(data.user);
-      }else{
-        alert("Compte créé. Consultez votre e-mail pour confirmer votre adresse.");
-        go("login");
-      }
-    }catch(error){
-      alert(clientErrorText(error));
-    }finally{
-      authBusy=false;
-    }
-  }
-
-  async function authLogin(email,password){
-    if(!email || !password) return alert("Saisissez votre e-mail et votre mot de passe.");
-    if(authBusy) return;
-
-    authBusy=true;
-    try{
-      const {data,error}=await ensureSupabase().auth.signInWithPassword({
-        email:normalizeEmail(email),
-        password
-      });
-      if(error) throw error;
-      if(!data?.user) throw new Error("Utilisateur non retourné par le service.");
-
-      const profile=await getMyProfile(data.user);
-      if(profile?.role==="admin"){
-        const admin=await getAdminContext(data.user);
-        currentAdminContext=admin;
-        await openAdminDashboard(admin);
-      }else{
-        await showClientDashboard(data.user);
-      }
-    }catch(error){
-      alert(clientErrorText(error));
-    }finally{
-      authBusy=false;
-    }
-  }
-
-  async function authLogout(){
-    try{
-      await ensureSupabase().auth.signOut();
-      adminViewActive=false;
-      clientViewActive=false;
-      currentAdminContext=null;
-      passwordRecoveryActive=false;
-      hidePrivatePages();
-      go("home");
-    }catch(error){
-      alert(clientErrorText(error));
-    }
-  }
-
-  async function authForgot(email){
-    email=normalizeEmail(email);
-    if(!email) return alert("Saisissez votre adresse e-mail.");
-
-    try{
-      const {error}=await ensureSupabase().auth.resetPasswordForEmail(email,{
-        redirectTo:window.location.origin+window.location.pathname
-      });
-      if(error) throw error;
-      alert("Le lien de réinitialisation a été envoyé à votre adresse e-mail.");
-      go("login");
-    }catch(error){
-      alert(clientErrorText(error));
-    }
-  }
-
-  async function authReset(password,confirm){
-    if(password!==confirm) return alert("Les mots de passe ne correspondent pas.");
-    if(password.length<6) return alert("Le mot de passe doit contenir au moins 6 caractères.");
-
-    try{
-      const {error}=await ensureSupabase().auth.updateUser({password});
-      if(error) throw error;
-      passwordRecoveryActive=false;
-      alert("Mot de passe modifié avec succès.");
-      await authLogout();
-    }catch(error){
-      alert(clientErrorText(error));
-    }
-  }
-
-  /* On remplace les handlers de formulaires existants au chargement.
-     Les fonctions existantes restent intactes dans le fichier. */
-  function bindAuth(){
-    const login=document.getElementById("login-form");
-    if(login && !login.dataset.eurAuthBound){
-      login.dataset.eurAuthBound="1";
-      login.addEventListener("submit",e=>{
-        e.preventDefault();
-        authLogin(
-          document.getElementById("login-email")?.value||"",
-          document.getElementById("login-password")?.value||""
-        );
-      });
-    }
-
-    const register=document.getElementById("register-form");
-    if(register && !register.dataset.eurAuthBound){
-      register.dataset.eurAuthBound="1";
-      register.addEventListener("submit",e=>{
-        e.preventDefault();
-        const i=e.target.querySelectorAll("input");
-        authRegister(i[0]?.value||"",i[1]?.value||"",i[2]?.value||"",i[3]?.value||"",i[4]?.value||"");
-      });
-    }
-
-    const forgot=document.getElementById("forgot-form");
-    if(forgot && !forgot.dataset.eurAuthBound){
-      forgot.dataset.eurAuthBound="1";
-      forgot.addEventListener("submit",e=>{
-        e.preventDefault();
-        authForgot(document.getElementById("forgot-email")?.value||"");
-      });
-    }
-
-    const reset=document.getElementById("reset-form");
-    if(reset && !reset.dataset.eurAuthBound){
-      reset.dataset.eurAuthBound="1";
-      reset.addEventListener("submit",e=>{
-        e.preventDefault();
-        authReset(
-          document.getElementById("new-password")?.value||"",
-          document.getElementById("confirm-new-password")?.value||""
-        );
-      });
-    }
-
-    document.querySelectorAll('button[onclick="signOut()"]').forEach(btn=>{
-      if(!btn.dataset.eurLogoutBound){
-        btn.dataset.eurLogoutBound="1";
-        btn.removeAttribute("onclick");
-        btn.addEventListener("click",authLogout);
-      }
-    });
-  }
-
-  function initAdditions(){
-    applyEuroLabels();
-    bindAuth();
-
-    /* Rejoue les libellés après les rendus Supabase dynamiques. */
-    setTimeout(applyEuroLabels,500);
-    setTimeout(applyEuroLabels,1500);
-
-    /* Message explicite dans la zone de création de dossier. */
-    const amount=document.getElementById("new-amount");
-    if(amount) amount.title="Tous les paiements sont traités en EUR uniquement.";
-  }
-
-  if(document.readyState==="loading"){
-    document.addEventListener("DOMContentLoaded",initAdditions,{once:true});
-  }else{
-    initAdditions();
-  }
-})();
-</script>
