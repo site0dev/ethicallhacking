@@ -462,7 +462,7 @@ footer{background:#050b15;color:#aeb8c8;padding:35px 0}
       <span class="eyebrow" data-i18n="contactEyebrow">Contact</span>
       <h2 data-i18n="contactTitle">Une question concernant votre sécurité ?</h2>
       <p data-i18n="contactText">Décrivez votre besoin. Nous pouvons commencer par définir le périmètre et l’objectif avant toute intervention.</p>
-      <div class="contact-item"><i class="fa-solid fa-envelope"></i><span>contact@ethicall-hacking.example</span></div>
+      <div class="contact-item"><i class="fa-solid fa-envelope"></i><span>ethicallhacking@boiseo.online</span></div>
       <div class="contact-item"><i class="fa-solid fa-shield-halved"></i><span data-i18n="contactItem">Interventions uniquement dans un cadre autorisé.</span></div>
      </div>
 
@@ -940,15 +940,22 @@ function applyLanguage(lang){
 }
 
 function go(page){
- // VERROU ADMIN : tant que la session administrateur est active,
- // aucune navigation publique (accueil, services, contact, connexion, etc.)
- // ne peut remplacer le tableau de bord. Seule signOut() lève ce verrou.
  if(adminViewActive){
-   if(page !== "admin") {
+   if(page !== "admin"){
      document.getElementById("navlinks")?.classList.remove("open");
      const adminPage=document.getElementById("admin-page");
      document.querySelectorAll(".page").forEach(x=>x.classList.remove("active"));
      adminPage?.classList.add("active");
+     window.scrollTo({top:0,behavior:"smooth"});
+     return false;
+   }
+ }
+ if(clientViewActive){
+   if(page !== "dashboard"){
+     document.getElementById("navlinks")?.classList.remove("open");
+     const dashboard=document.getElementById("dashboard-page");
+     document.querySelectorAll(".page").forEach(x=>x.classList.remove("active"));
+     dashboard?.classList.add("active");
      window.scrollTo({top:0,behavior:"smooth"});
      return false;
    }
@@ -966,6 +973,8 @@ function enterAdminDashboard(admin){
  if(!admin?.user?.id || admin.profile?.role !== "admin") return false;
  currentAdminContext=admin;
  adminViewActive=true;
+ clientViewActive=false;
+ updateAuthUI();
  hidePrivatePages();
  const page=document.getElementById("admin-page");
  if(!page) return false;
@@ -976,6 +985,7 @@ function enterAdminDashboard(admin){
  return true;
 }
 
+updateAuthUI();
 document.getElementById("lang-btn")?.addEventListener("change",e=>applyLanguage(e.target.value));
 document.getElementById("menu-btn")?.addEventListener("click",()=>document.getElementById("navlinks")?.classList.toggle("open"));
 
@@ -1051,7 +1061,7 @@ try {
 } catch(error){ console.error('[SUPABASE INIT]',error); }
 
 let adminClicks=0, adminClickTimer=null;
-let authBusy=false, adminViewActive=false, passwordRecoveryActive=false;
+let authBusy=false, adminViewActive=false, clientViewActive=false, passwordRecoveryActive=false;
 let currentAdminContext=null;
 let serviceChannel=null, messageChannel=null, adminRefreshTimer=null;
 let selectedAdminClientId='';
@@ -1073,7 +1083,37 @@ function adminErrorText(error){
 }
 function withTimeout(promise,ms,message){let timer;return Promise.race([promise,new Promise((_,reject)=>timer=setTimeout(()=>reject(new Error(message)),ms))]).finally(()=>clearTimeout(timer));}
 function setMessage(id,text,ok=false){const el=document.getElementById(id);if(!el)return;el.textContent=text||'';el.className='muted '+(ok?'admin-success':'');}
-function hidePrivatePages(){document.getElementById('dashboard-page')?.classList.remove('active');document.getElementById('admin-page')?.classList.remove('active');}
+function hidePrivatePages(){
+ document.getElementById('dashboard-page')?.classList.remove('active');
+ document.getElementById('admin-page')?.classList.remove('active');
+}
+function updateAuthUI(){
+ const navlinks=document.getElementById('navlinks');
+ const accountBtn=document.querySelector('.account-btn');
+ const menuBtn=document.getElementById('menu-btn');
+ if(!navlinks || !accountBtn)return;
+ if(adminViewActive){
+   navlinks.style.display='none';
+   accountBtn.style.display='none';
+   if(menuBtn)menuBtn.style.display='none';
+   return;
+ }
+ if(clientViewActive){
+   navlinks.style.display='none';
+   accountBtn.style.display='inline-flex';
+   accountBtn.innerHTML='<i class="fa-regular fa-user"></i> Mon espace';
+   accountBtn.onclick=()=>go('dashboard');
+   accountBtn.setAttribute('aria-label','Ouvrir mon espace');
+   if(menuBtn)menuBtn.style.display='none';
+   return;
+ }
+ navlinks.style.display='';
+ accountBtn.style.display='inline-flex';
+ accountBtn.innerHTML='<i class="fa-regular fa-user"></i> Mon espace';
+ accountBtn.onclick=()=>go('login');
+ accountBtn.setAttribute('aria-label','Se connecter à mon espace');
+ if(menuBtn)menuBtn.style.removeProperty('display');
+}
 
 /* ---------- ADMIN LOGIN : 3 CLICS ---------- */
 function clearAdminError(){const e=document.getElementById('admin-login-error');if(e){e.textContent='';e.style.display='none';}}
@@ -1135,7 +1175,13 @@ function renderMessage(x,currentUserId){const isAdmin=x.sender_id!==currentUserI
 async function loadClientMessages(){const box=document.getElementById('client-message-list'),user=await getSessionUser();if(!box||!user)return;const {data,error}=await ensureSupabase().from('client_messages').select('id,client_id,sender_id,message,is_read,created_at').eq('client_id',user.id).order('created_at',{ascending:true});if(error){box.innerHTML=`<div class="empty">${esc(adminErrorText(error))}</div>`;return;}box.innerHTML=(data||[]).length?data.map(x=>renderMessage(x,user.id)).join(''):'<div class="empty">Aucun message.</div>';box.scrollTop=box.scrollHeight;}
 async function sendClientMessage(event){event?.preventDefault();try{const user=await getSessionUser();const message=document.getElementById('client-message-input')?.value.trim();if(!user||!message)throw new Error('Écrivez un message.');const {error}=await ensureSupabase().from('client_messages').insert({client_id:user.id,sender_id:user.id,message,is_read:false});if(error)throw error;event.target.reset();await loadClientMessages();}catch(error){alert(adminErrorText(error));}}
 
-async function showClientDashboard(user){adminViewActive=false;hidePrivatePages();document.getElementById('dashboard-page')?.classList.add('active');const profile=await getMyProfile(user);const p=document.querySelector('#dashboard-page .profile-summary');if(p)p.textContent=`${profile?.full_name||user.user_metadata?.full_name||'Client'} — ${profile?.email||user.email||''}${profile?.phone?' — '+profile.phone:''}`;await loadPublicServicesForClient();await loadClientServices();await loadClientMessages();await startRealtime(user,false);window.scrollTo({top:0,behavior:'smooth'});}
+async function showClientDashboard(user){
+ adminViewActive=false;
+ clientViewActive=true;
+ hidePrivatePages();
+ document.getElementById('dashboard-page')?.classList.add('active');
+ updateAuthUI();
+ const profile=await getMyProfile(user);const p=document.querySelector('#dashboard-page .profile-summary');if(p)p.textContent=`${profile?.full_name||user.user_metadata?.full_name||'Client'} — ${profile?.email||user.email||''}${profile?.phone?' — '+profile.phone:''}`;await loadPublicServicesForClient();await loadClientServices();await loadClientMessages();await startRealtime(user,false);window.scrollTo({top:0,behavior:'smooth'});}
 async function signInClient(email,password){
  if(authBusy)return;
  authBusy=true;
@@ -1245,6 +1291,7 @@ async function startRealtime(user,isAdmin){const sb=ensureSupabase();if(serviceC
 async function signOut(){
  // On lève le verrou AVANT la navigation publique.
  adminViewActive=false;
+ clientViewActive=false;
  currentAdminContext=null;
  passwordRecoveryActive=false;
  clearTimeout(adminRefreshTimer);
@@ -1257,7 +1304,14 @@ async function signOut(){
  hidePrivatePages();
  go('home');
 }
-async function initializeSession(){try{const user=await getSessionUser();if(!user)return;const profile=await getMyProfile(user);if(profile?.role==='admin'){const admin=await getAdminContext(user);currentAdminContext=admin;await openAdminDashboard(admin);}else{await showClientDashboard(user);}}catch(error){console.error('[SESSION INIT]',error);}}
+async function initializeSession(){
+ try{
+  clientViewActive=false;
+  adminViewActive=false;
+  updateAuthUI();
+  const user=await getSessionUser();
+  if(!user)return;
+  const profile=await getMyProfile(user);if(profile?.role==='admin'){const admin=await getAdminContext(user);currentAdminContext=admin;await openAdminDashboard(admin);}else{await showClientDashboard(user);}}catch(error){console.error('[SESSION INIT]',error);}}
 
 /* ---------- DOM ---------- */
 document.addEventListener('DOMContentLoaded',()=>{
@@ -1284,7 +1338,23 @@ document.addEventListener('DOMContentLoaded',()=>{
  initializeSession();
 });
 
-if(supabaseClient){supabaseClient.auth.onAuthStateChange(event=>{if(event==='PASSWORD_RECOVERY'){passwordRecoveryActive=true;adminViewActive=false;go('reset');}else if(event==='SIGNED_OUT'){adminViewActive=false;currentAdminContext=null;hidePrivatePages();}});}
+if(supabaseClient){
+ supabaseClient.auth.onAuthStateChange(event=>{
+  if(event==='PASSWORD_RECOVERY'){
+   passwordRecoveryActive=true;
+   adminViewActive=false;
+   clientViewActive=false;
+   updateAuthUI();
+   go('reset');
+  }else if(event==='SIGNED_OUT'){
+   adminViewActive=false;
+   clientViewActive=false;
+   currentAdminContext=null;
+   hidePrivatePages();
+   updateAuthUI();
+  }
+ });
+}
 </script>
 </body>
 </html>
