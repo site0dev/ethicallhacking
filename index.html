@@ -322,15 +322,6 @@ footer{background:#050b15;color:#aeb8c8;padding:35px 0}
 .admin-table th,.admin-table td{padding:10px;border-bottom:1px solid var(--line);text-align:left;font-size:.78rem;vertical-align:top}
 .admin-table th{background:#f7f8fa;text-transform:uppercase;letter-spacing:.05em;font-size:.66rem}
 .admin-photo{width:100%;aspect-ratio:4/3;object-fit:cover;background:#eef1f5}
-.gallery-public-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
-.gallery-public-item{position:relative;overflow:hidden;background:#eef1f5;min-height:260px}
-.gallery-public-item img{width:100%;height:100%;min-height:260px;object-fit:cover;display:block;transition:transform .3s}
-.gallery-public-item:hover img{transform:scale(1.03)}
-.gallery-public-caption{position:absolute;left:0;right:0;bottom:0;padding:18px;color:#fff;background:linear-gradient(transparent,rgba(5,11,21,.88))}
-.gallery-public-caption strong{font-family:var(--serif);font-size:1.15rem}
-.gallery-admin-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}
-.gallery-admin-item{border:1px solid var(--line);background:#fff;padding:10px}
-.gallery-admin-body{padding:8px 2px 2px}
 .admin-stat{font-size:2rem;font-family:var(--serif);font-weight:700}
 .client-message-list{display:flex;flex-direction:column;gap:8px;max-height:420px;overflow:auto;padding-right:3px}
 .client-message{padding:11px 13px;border:1px solid var(--line);background:#fff}
@@ -341,11 +332,9 @@ footer{background:#050b15;color:#aeb8c8;padding:35px 0}
  .admin-tabs{grid-template-columns:repeat(3,minmax(0,1fr))}
  .admin-grid,.admin-grid-3{grid-template-columns:1fr}
  .admin-list{grid-template-columns:repeat(2,minmax(0,1fr))}
- .gallery-admin-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
 }
 @media(max-width:600px){
  .admin-tabs{grid-template-columns:repeat(2,minmax(0,1fr))}
- .admin-list,.gallery-admin-grid,.gallery-public-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
  .admin-tabs button{font-size:.62rem;padding:10px 7px}
  .admin-list .admin-service{padding:12px}
  .admin-mini-actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr))}
@@ -354,6 +343,15 @@ footer{background:#050b15;color:#aeb8c8;padding:35px 0}
 .muted{color:var(--muted);font-size:.86rem}
 </style>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+<style id="simple-font-override">
+  html, body, button, input, textarea, select, .page, .card, .service-card,
+  .service-card h3, .service-card h2, .service-card p, .modal,
+  .modal h2, .modal h3, .hero, .hero h1, .hero h2, .hero p {
+    font-family: Arial, Helvetica, sans-serif !important;
+  }
+</style>
+
 </head>
 
 <body>
@@ -843,9 +841,9 @@ footer{background:#050b15;color:#aeb8c8;padding:35px 0}
    <div class="panel">
     <h3>Galerie</h3>
     <p class="muted">Les images utilisent la table <code>models</code> et le bucket Storage <code>models</code>.</p>
-    <div class="admin-toolbar"><input id="gallery-upload" type="file" accept="image/*" multiple><button class="btn gold" type="button" onclick="uploadGalleryFiles()"><i class="fa-solid fa-upload"></i> Ajouter les photos</button></div>
+    <div class="admin-toolbar"><input id="gallery-upload" type="file" accept="image/*" multiple></div>
     <p id="gallery-message" class="muted"></p>
-    <div id="gallery-admin-grid" class="gallery-admin-grid"><div class="empty">Chargement…</div></div>
+    </div>
    </div>
   </div>
 
@@ -1394,7 +1392,7 @@ async function savePublicService(event){event.preventDefault();try{const id=docu
 async function deletePublicService(id){if(!confirm('Supprimer ce service ?'))return;try{const {error}=await ensureSupabase().from('services').delete().eq('id',id);if(error)throw error;await loadPublicServicesAdmin();await loadPublicServicesForClient();}catch(error){alert(adminErrorText(error));}}
 
 /* ---------- ADMIN : GALERIE ---------- */
-async function loadGalleryAdmin(){const box=document.getElementById('gallery-admin-grid');if(!box)return;const {data,error}=await ensureSupabase().from('models').select('id,name,description,image_url,category,display_order,is_active,created_at,updated_at').order('display_order',{ascending:true});if(error){box.innerHTML=`<div class="empty">${esc(adminErrorText(error))}</div>`;throw error;}const rows=data||[];box.innerHTML=rows.length?rows.map((x,i)=>`<div class="gallery-admin-item"><img class="admin-photo" src="${esc(x.image_url||'')}" alt="${esc(x.name||'Photo '+(i+1))}"><div class="gallery-admin-body"><strong>${esc(x.name||'Photo')}</strong><p class="muted">${esc(x.description||'')}</p><div class="admin-mini-actions"><button class="btn outline admin-danger" type="button" onclick="deleteGalleryItem('${esc(x.id)}','${esc(x.image_url||'')}')">Supprimer</button></div></div></div>`).join(''):'<div class="empty">Aucune photo.</div>';}
+async function loadGalleryAdmin(){const box=document.getElementById('gallery-admin-grid');if(!box)return;const {data,error}=await ensureSupabase().from('models').select('id,name,description,image_url,category,display_order,is_active,created_at,updated_at').order('display_order',{ascending:true});if(error){box.innerHTML=`<div class="empty">${esc(adminErrorText(error))}</div>`;throw error;}const rows=data||[];box.innerHTML=rows.length?rows.map((x,i)=>`<div class="gallery-admin-item"><img class="admin-photo" src="${esc(x.image_url||'')}" alt="${esc(x.name||'Photo '+(i+1))}"><div class="gallery-admin-body"><strong>${esc(x.name||'Photo')}</strong><p class="muted">${esc(x.description||'')}</p><div class="admin-mini-actions"></div></div></div>`).join(''):'<div class="empty">Aucune photo.</div>';}
 async function uploadGalleryFiles(){const input=document.getElementById('gallery-upload');const files=[...(input?.files||[])];if(!files.length)return setMessage('gallery-message','Choisissez au moins une image.');try{let order=0;const r=await ensureSupabase().from('models').select('display_order').order('display_order',{ascending:false}).limit(1);if(!r.error&&r.data?.[0])order=Number(r.data[0].display_order||0)+1;for(const file of files){const safe=file.name.toLowerCase().replace(/[^a-z0-9._-]/g,'-');const path=`gallery/${crypto.randomUUID()}-${safe}`;const up=await ensureSupabase().storage.from('models').upload(path,file,{upsert:false,contentType:file.type||'image/*'});if(up.error)throw up.error;const pub=ensureSupabase().storage.from('models').getPublicUrl(path);const ins=await ensureSupabase().from('models').insert({name:file.name.replace(/\.[^.]+$/,''),image_url:pub.data.publicUrl,display_order:order++,is_active:true});if(ins.error)throw ins.error;}input.value='';setMessage('gallery-message','Photos ajoutées.',true);await loadGalleryAdmin();}catch(error){setMessage('gallery-message',adminErrorText(error));}}
 async function deleteGalleryItem(id,url){if(!confirm('Supprimer cette photo ?'))return;try{const marker='/storage/v1/object/public/models/';const i=String(url||'').indexOf(marker);if(i>=0){const path=decodeURIComponent(String(url).slice(i+marker.length).split('?')[0]);await ensureSupabase().storage.from('models').remove([path]);}const {error}=await ensureSupabase().from('models').delete().eq('id',id);if(error)throw error;await loadGalleryAdmin();}catch(error){alert(adminErrorText(error));}}
 
