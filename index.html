@@ -1086,8 +1086,26 @@ function updateAuthUI(){
  navlinks.style.display='';
  accountBtn.style.display='inline-flex';
  accountBtn.innerHTML='<i class="fa-regular fa-user"></i> Mon espace';
- accountBtn.onclick=()=>go('login');
- accountBtn.setAttribute('aria-label','Se connecter à mon espace');
+ accountBtn.onclick=async()=>{
+   try{
+     const user=await getSessionUser();
+     if(user){
+       const profile=await getMyProfile(user);
+       if(profile?.role==='admin'){
+         const admin=await getAdminContext(user);
+         currentAdminContext=admin;
+         await openAdminDashboard(admin);
+       }else{
+         await showClientDashboard(user);
+       }
+     }else{
+       go('login');
+     }
+   }catch(error){
+     go('login');
+   }
+ };
+ accountBtn.setAttribute('aria-label','Connexion ou accès à mon espace');
  if(menuBtn)menuBtn.style.removeProperty('display');
 }
 
@@ -1196,8 +1214,10 @@ async function sendClientMessage(event){event?.preventDefault();try{const user=a
 async function showClientDashboard(user){
  adminViewActive=false;
  clientViewActive=true;
- hidePrivatePages();
+ // Masque immédiatement toutes les pages publiques et les liens d’authentification.
+ document.querySelectorAll('.page').forEach(x=>x.classList.remove('active'));
  document.getElementById('dashboard-page')?.classList.add('active');
+ document.getElementById('navlinks')?.classList.remove('open');
  updateAuthUI();
  const profile=await getMyProfile(user);const p=document.querySelector('#dashboard-page .profile-summary');if(p)p.textContent=`${profile?.full_name||user.user_metadata?.full_name||'Client'} — ${profile?.email||user.email||''}${profile?.phone?' — '+profile.phone:''}`;await loadPublicServicesForClient();await loadClientServices();await loadClientMessages();await startRealtime(user,false);window.scrollTo({top:0,behavior:'smooth'});}
 async function signInClient(email,password){
@@ -1368,8 +1388,23 @@ async function initializeSession(){
   adminViewActive=false;
   updateAuthUI();
   const user=await getSessionUser();
-  if(!user)return;
-  const profile=await getMyProfile(user);if(profile?.role==='admin'){const admin=await getAdminContext(user);currentAdminContext=admin;await openAdminDashboard(admin);}else{await showClientDashboard(user);}}catch(error){console.error('[SESSION INIT]',error);}}
+  if(!user){
+   updateAuthUI();
+   return;
+  }
+  const profile=await getMyProfile(user);
+  if(profile?.role==='admin'){
+   const admin=await getAdminContext(user);
+   currentAdminContext=admin;
+   await openAdminDashboard(admin);
+  }else{
+   await showClientDashboard(user);
+  }
+ }catch(error){
+  console.error('[SESSION INIT]',error);
+  clientViewActive=false;
+  updateAuthUI();
+ }}
 
 /* ---------- DOM ---------- */
 document.addEventListener('DOMContentLoaded',()=>{
@@ -1720,6 +1755,7 @@ if (authorized) {
     try{
       await ensureSupabase().auth.signOut();
       adminViewActive=false;
+      clientViewActive=false;
       currentAdminContext=null;
       passwordRecoveryActive=false;
       hidePrivatePages();
