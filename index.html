@@ -1327,7 +1327,7 @@ function updateAuthUI(){
    accountBtn.style.display='inline-flex';
    accountBtn.innerHTML='<i class="fa-regular fa-user"></i> Mon espace';
    accountBtn.onclick=()=>go('dashboard');
-   accountBtn.setAttribute('aria-label','Ouvrir mon espace');
+   accountBtn.setAttribute('aria-label','Ouvrir mon espace client');
    if(menuBtn)menuBtn.style.display='none';
    return;
  }
@@ -1337,26 +1337,22 @@ function updateAuthUI(){
  accountBtn.onclick=async()=>{
    try{
      const user=await getSessionUser();
-     if(user){
-       const profile=await getMyProfile(user);
-       if(profile?.role==='admin'){
-         const admin=await getAdminContext(user);
-         currentAdminContext=admin;
-         await openAdminDashboard(admin);
-       }else{
-         await showClientDashboard(user);
-       }
-     }else{
-       go('login');
+     if(!user){go('login');return;}
+     const profile=await getMyProfile(user);
+     if(profile && String(profile.role||'').toLowerCase()==='admin'){
+       go('home');
+       openAdminLogin();
+       return;
      }
+     await showClientDashboard(user);
    }catch(error){
+     console.error('[CLIENT ACCESS]',error);
      go('login');
    }
  };
- accountBtn.setAttribute('aria-label','Connexion ou accès à mon espace');
+ accountBtn.setAttribute('aria-label','Connexion ou accès à mon espace client');
  if(menuBtn)menuBtn.style.removeProperty('display');
 }
-
 /* ---------- ADMIN LOGIN : 3 CLICS ---------- */
 function clearAdminError(){const e=document.getElementById('admin-login-error');if(e){e.textContent='';e.style.display='none';}}
 function adminStage(text,ok=true){const e=document.getElementById('admin-login-error');if(!e)return;e.style.display='block';e.style.color=ok?'var(--ok)':'var(--danger)';e.textContent=text;}
@@ -1397,7 +1393,7 @@ async function adminSubmitLogin(event){
   if(error)throw error;if(!data?.user)throw new Error('Utilisateur non retourné par le service.');
   adminStage('Vérification des autorisations…');
   const admin=await getAdminContext(data.user);
-  currentAdminContext=admin;adminViewActive=true;
+  currentAdminContext=admin;adminViewActive=true;clientViewActive=false;localStorage.setItem('eh_space','admin');
   await openAdminDashboard(admin);closeAdminLogin();
  }catch(error){adminViewActive=false;showAdminError(error);}finally{authBusy=false;if(button){button.disabled=false;button.textContent='Se connecter';}}
  return false;
@@ -1484,8 +1480,10 @@ async function sendClientMessage(event){
  if(button){button.disabled=true;button.dataset.oldText=button.textContent;button.textContent='Envoi…';}
  try{
   const user=await getSessionUser();
+  const profile=await getMyProfile(user);
   const message=input?.value.trim()||'';
-  if(!user)throw new Error('Votre session client n’est plus active. Reconnectez-vous.');
+  if(!user||!profile)throw new Error('Votre session client n’est plus active. Reconnectez-vous.');
+  if(String(profile.role||'').toLowerCase()==='admin')throw new Error('Cette action appartient à l’espace administration.');
   if(!message)throw new Error('Écrivez un message avant de l’envoyer.');
   const {error}=await withTimeout(
    ensureSupabase().from('client_messages').insert({client_id:user.id,sender_id:user.id,message,is_read:false}),
@@ -1498,12 +1496,11 @@ async function sendClientMessage(event){
   await loadClientMessages();
  }catch(error){
   console.error('[CLIENT MESSAGE]',error);
-  setStatus(adminErrorText(error));
+  setStatus(clientErrorText(error));
  }finally{
   if(button){button.disabled=false;button.textContent=button.dataset.oldText||'Envoyer le message';}
  }
 }
-
 async function refreshClientDashboard(){
  try{
   const user=await getSessionUser();
@@ -1518,6 +1515,8 @@ async function refreshClientDashboard(){
 async function showClientDashboard(user){
  adminViewActive=false;
  clientViewActive=true;
+ localStorage.setItem('eh_space','client');
+ currentAdminContext=null;
  // Masque immédiatement toutes les pages publiques et les liens d’authentification.
  document.querySelectorAll('.page').forEach(x=>x.classList.remove('active'));
  document.getElementById('dashboard-page')?.classList.add('active');
@@ -1532,13 +1531,18 @@ async function signInClient(email,password){
    if(error)throw error;
    if(!data?.user)throw new Error('Utilisateur non retourné par le service.');
    const profile=await getMyProfile(data.user);
-   if(profile?.role==='admin'){
-     const admin=await getAdminContext(data.user);
-     currentAdminContext=admin;
-     await openAdminDashboard(admin);
-   }else{
-     await showClientDashboard(data.user);
+   if(!profile){
+     await ensureSupabase().auth.signOut();
+     throw new Error('Votre profil client est introuvable. Contactez l’administration.');
    }
+   if(String(profile.role||'').toLowerCase()==='admin'){
+     await ensureSupabase().auth.signOut();
+     throw new Error('Ce compte est réservé à l’administration. Utilisez l’accès Administration.');
+   }
+   localStorage.setItem('eh_space','client');
+   currentAdminContext=null;
+   adminViewActive=false;
+   await showClientDashboard(data.user);
  }catch(error){alert(clientErrorText(error));}
  finally{authBusy=false;}
 }
@@ -1569,7 +1573,8 @@ async function sendAdminClientMessage(event){
  const setStatus=(msg,ok=false)=>{if(status){status.textContent=msg;status.className='muted '+(ok?'admin-success':'');}};
  if(button){button.disabled=true;button.dataset.oldText=button.textContent;button.textContent='Envoi…';}
  try{
-  if(!currentAdminContext)currentAdminContext=await requireAdmin();
+  if(!currentAdminContext)throw new Error('Session administration absente.');
+  if(String(currentAdminContext.profile?.role||'').toLowerCase()!=='admin')throw new Error('Accès administration refusé.');
   const clientId=document.getElementById('admin-message-client')?.value||selectedAdminClientId;
   const message=document.getElementById('admin-client-message-input')?.value.trim()||'';
   if(!clientId||!message)throw new Error('Choisissez un client et écrivez un message.');
@@ -1589,7 +1594,6 @@ async function sendAdminClientMessage(event){
   if(button){button.disabled=false;button.textContent=button.dataset.oldText||'Envoyer';}
  }
 }
-
 /* ---------- ADMIN : SITE CONTENT ---------- */
 function contentTextValue(content){if(content==null)return '';if(typeof content==='object')return content.text??JSON.stringify(content,null,2);try{const x=JSON.parse(content);return typeof x==='object'?(x.text??JSON.stringify(x,null,2)):String(x);}catch(_){return String(content);}}
 async function loadSiteContent(){const box=document.getElementById('site-content-editor');if(!box)return;const {data,error}=await ensureSupabase().from('site_content').select('id,content_key,title,content,image_url,button_text,button_url,updated_at').order('updated_at',{ascending:false});if(error){box.innerHTML=`<div class="empty">${esc(adminErrorText(error))}</div>`;throw error;}const rows=data||[];if(!rows.length){box.innerHTML='<div class="empty">Aucun contenu enregistré.</div>';return;}box.innerHTML=rows.map(x=>`<form class="admin-card site-content-form" data-id="${esc(x.id)}" style="margin-bottom:12px"><div class="form-grid"><div class="field"><label>Clé</label><input name="content_key" value="${esc(x.content_key||'')}"></div><div class="field"><label>Titre</label><input name="title" value="${esc(x.title||'')}"></div><div class="field full"><label>Texte</label><textarea name="text">${esc(contentTextValue(x.content))}</textarea></div><div class="field full"><label>Image URL</label><input name="image_url" value="${esc(x.image_url||'')}"></div><div class="field"><label>Bouton</label><input name="button_text" value="${esc(x.button_text||'')}"></div><div class="field"><label>URL bouton</label><input name="button_url" value="${esc(x.button_url||'')}"></div><div class="field full"><button class="btn gold" type="submit">Enregistrer « ${esc(x.content_key||'contenu')} »</button></div></div></form>`).join('');box.querySelectorAll('.site-content-form').forEach(form=>form.addEventListener('submit',saveSiteContent));}
@@ -1703,6 +1707,7 @@ async function signOut(){
  adminViewActive=false;
  clientViewActive=false;
  currentAdminContext=null;
+ localStorage.removeItem('eh_space');
  passwordRecoveryActive=false;
  clearTimeout(adminRefreshTimer);
  if(serviceChannel){try{await ensureSupabase().removeChannel(serviceChannel);}catch(_){}}
@@ -1718,26 +1723,50 @@ async function initializeSession(){
  try{
   clientViewActive=false;
   adminViewActive=false;
+  currentAdminContext=null;
   updateAuthUI();
   const user=await getSessionUser();
   if(!user){
+   localStorage.removeItem('eh_space');
    updateAuthUI();
    return;
   }
   const profile=await getMyProfile(user);
-  if(profile?.role==='admin'){
-   const admin=await getAdminContext(user);
-   currentAdminContext=admin;
-   await openAdminDashboard(admin);
-  }else{
-   await showClientDashboard(user);
+  if(!profile){
+   await ensureSupabase().auth.signOut();
+   localStorage.removeItem('eh_space');
+   return;
   }
+  const role=String(profile.role||'').toLowerCase();
+  const space=localStorage.getItem('eh_space');
+  if(space==='admin'){
+    if(role!=='admin'){
+      await ensureSupabase().auth.signOut();
+      localStorage.removeItem('eh_space');
+      throw new Error('Cette session ne possède pas les droits administrateur.');
+    }
+    const admin=await getAdminContext(user);
+    currentAdminContext=admin;
+    await openAdminDashboard(admin);
+    return;
+  }
+  if(role==='admin'){
+    // Une session administrateur ne doit jamais être ouverte automatiquement dans l’espace client.
+    // Elle reste isolée derrière l’accès Administration.
+    await ensureSupabase().auth.signOut();
+    localStorage.removeItem('eh_space');
+    updateAuthUI();
+    return;
+  }
+  localStorage.setItem('eh_space','client');
+  await showClientDashboard(user);
  }catch(error){
   console.error('[SESSION INIT]',error);
   clientViewActive=false;
+  adminViewActive=false;
+  currentAdminContext=null;
   updateAuthUI();
  }}
-
 /* ---------- DOM ---------- */
 document.addEventListener('DOMContentLoaded',()=>{
  document.getElementById('admin-login-modal')?.addEventListener('click',e=>{if(e.target.id==='admin-login-modal')closeAdminLogin();});
