@@ -1480,16 +1480,12 @@ async function sendClientMessage(event){
  if(button){button.disabled=true;button.dataset.oldText=button.textContent;button.textContent='Envoi…';}
  try{
   const user=await getSessionUser();
+  if(!user)throw new Error('Votre session client n’est plus active. Reconnectez-vous.');
   const profile=await getMyProfile(user);
+  if(!profile || String(profile.role||'').toLowerCase()!=='client')throw new Error('Cet espace est réservé aux clients.');
   const message=input?.value.trim()||'';
-  if(!user||!profile)throw new Error('Votre session client n’est plus active. Reconnectez-vous.');
-  if(String(profile.role||'').toLowerCase()==='admin')throw new Error('Cette action appartient à l’espace administration.');
   if(!message)throw new Error('Écrivez un message avant de l’envoyer.');
-  const {error}=await withTimeout(
-   ensureSupabase().from('client_messages').insert({client_id:user.id,sender_id:user.id,message,is_read:false}),
-   12000,
-   'Le serveur n’a pas répondu à l’envoi du message.'
-  );
+  const {error}=await withTimeout(ensureSupabase().rpc('send_client_message',{p_client_id:user.id,p_message:message}),12000,'Le serveur n’a pas répondu à l’envoi du message.');
   if(error)throw error;
   form?.reset();
   setStatus('Message envoyé à l’administration.',true);
@@ -1573,18 +1569,19 @@ async function sendAdminClientMessage(event){
  const setStatus=(msg,ok=false)=>{if(status){status.textContent=msg;status.className='muted '+(ok?'admin-success':'');}};
  if(button){button.disabled=true;button.dataset.oldText=button.textContent;button.textContent='Envoi…';}
  try{
-  if(!currentAdminContext)throw new Error('Session administration absente.');
-  if(String(currentAdminContext.profile?.role||'').toLowerCase()!=='admin')throw new Error('Accès administration refusé.');
+  if(!currentAdminContext?.user?.id || String(currentAdminContext.profile?.role||'').toLowerCase()!=='admin')throw new Error('Session administration absente.');
   const clientId=document.getElementById('admin-message-client')?.value||selectedAdminClientId;
   const message=document.getElementById('admin-client-message-input')?.value.trim()||'';
-  if(!clientId||!message)throw new Error('Choisissez un client et écrivez un message.');
-  const {error}=await withTimeout(
-   ensureSupabase().from('client_messages').insert({client_id:clientId,sender_id:currentAdminContext.user.id,message,is_read:false}),
-   12000,
-   'Le serveur n’a pas répondu à l’envoi du message.'
-  );
+  if(!clientId)throw new Error('Choisissez un client.');
+  if(!message)throw new Error('Écrivez un message avant de l’envoyer.');
+  const {data:client,error:clientError}=await ensureSupabase().from('profiles').select('id,role').eq('id',clientId).maybeSingle();
+  if(clientError)throw clientError;
+  if(!client || String(client.role||'').toLowerCase()!=='client')throw new Error('Le destinataire sélectionné n’est pas un client.');
+  const {error}=await withTimeout(ensureSupabase().rpc('send_client_message',{p_client_id:clientId,p_message:message}),12000,'Le serveur n’a pas répondu à l’envoi du message.');
   if(error)throw error;
   form?.reset();
+  document.getElementById('admin-message-client').value=clientId;
+  selectedAdminClientId=clientId;
   setStatus('Message envoyé au client.',true);
   await loadAdminClientMessages(clientId);
  }catch(error){
