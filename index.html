@@ -1468,7 +1468,7 @@ async function createClientRequest(event){event?.preventDefault();try{const user
 
 /* ---------- CLIENT MESSAGES ---------- */
 function renderMessage(x,currentUserId){const isAdmin=x.sender_id!==currentUserId;return `<div class="client-message ${isAdmin?'admin':'client'}"><small>${isAdmin?'Administration':'Vous'} · ${esc(formatDate(x.created_at))}</small><div style="white-space:pre-wrap">${esc(x.message||'')}</div></div>`;}
-async function loadClientMessages(){const box=document.getElementById('client-message-list'),user=await getSessionUser();if(!box||!user)return;const {data,error}=await ensureSupabase().from('client_messages').select('id,client_id,sender_id,message,is_read,created_at').eq('client_id',user.id).order('created_at',{ascending:true});if(error){box.innerHTML=`<div class="empty">${esc(clientErrorText(error))}</div>`;return;}box.innerHTML=(data||[]).length?data.map(x=>renderMessage(x,user.id)).join(''):'<div class="empty">Aucun message.</div>';box.scrollTop=box.scrollHeight;}
+async function loadClientMessages(){const box=document.getElementById('client-message-list'),user=await getSessionUser();if(!box||!user)return;const {data,error}=await ensureSupabase().rpc('get_client_messages',{p_client_id:user.id});if(error){box.innerHTML=`<div class="empty">${esc(clientErrorText(error))}</div>`;return;}box.innerHTML=(data||[]).length?data.map(x=>renderMessage(x,user.id)).join(''):'<div class="empty">Aucun message.</div>';box.scrollTop=box.scrollHeight;}
 async function sendClientMessage(event){
  event?.preventDefault();
  const form=event?.currentTarget||event?.target;
@@ -1558,7 +1558,7 @@ async function loadAdminClients(){const box=document.getElementById('adminClient
 
 /* ---------- ADMIN : MESSAGES ---------- */
 async function loadAdminMessages(){const box=document.getElementById('adminMessages');if(!box)return[];const {data,error}=await ensureSupabase().from('contact_messages').select('id,name,email,subject,message,is_read,created_at').order('created_at',{ascending:false});if(error){box.innerHTML=`<div class="empty">${esc(adminErrorText(error))}</div>`;throw error;}const rows=data||[];document.getElementById('stat-messages')?.replaceChildren(document.createTextNode(String(rows.length)));box.innerHTML=rows.length?rows.map(x=>`<div class="admin-service"><div class="admin-service-head"><div><strong>${esc(x.subject||'Message')}</strong><br><small>${esc(x.name||'')} — ${esc(x.email||'')}</small></div><small>${esc(formatDate(x.created_at))}</small></div><p style="white-space:pre-wrap">${esc(x.message||'')}</p></div>`).join(''):'<div class="empty">Aucun message.</div>';return rows;}
-async function loadAdminClientMessages(clientId){const box=document.getElementById('admin-client-message-list');if(!box)return;if(!clientId){box.innerHTML='<div class="empty">Sélectionnez un client.</div>';return;}const {data,error}=await ensureSupabase().from('client_messages').select('id,client_id,sender_id,message,is_read,created_at').eq('client_id',clientId).order('created_at',{ascending:true});if(error){box.innerHTML=`<div class="empty">${esc(adminErrorText(error))}</div>`;return;}box.innerHTML=(data||[]).length?data.map(x=>renderMessage(x,currentAdminContext?.user?.id)).join(''):'<div class="empty">Aucun message.</div>';box.scrollTop=box.scrollHeight;}
+async function loadAdminClientMessages(clientId){const box=document.getElementById('admin-client-message-list');if(!box)return;if(!clientId){box.innerHTML='<div class="empty">Sélectionnez un client.</div>';return;}const {data,error}=await ensureSupabase().rpc('get_admin_client_messages',{p_client_id:clientId});if(error){box.innerHTML=`<div class="empty">${esc(adminErrorText(error))}</div>`;return;}box.innerHTML=(data||[]).length?data.map(x=>renderMessage(x,currentAdminContext?.user?.id)).join(''):'<div class="empty">Aucun message.</div>';box.scrollTop=box.scrollHeight;}
 function selectAdminClient(id){selectedAdminClientId=id;const sel=document.getElementById('admin-message-client');if(sel)sel.value=id;switchAdminTab('messages');loadAdminClientMessages(id);}
 async function sendAdminClientMessage(event){
  event?.preventDefault();
@@ -1577,7 +1577,7 @@ async function sendAdminClientMessage(event){
   const {data:client,error:clientError}=await ensureSupabase().from('profiles').select('id,role').eq('id',clientId).maybeSingle();
   if(clientError)throw clientError;
   if(!client || String(client.role||'').toLowerCase()!=='client')throw new Error('Le destinataire sélectionné n’est pas un client.');
-  const {error}=await withTimeout(ensureSupabase().rpc('send_client_message',{p_client_id:clientId,p_message:message}),12000,'Le serveur n’a pas répondu à l’envoi du message.');
+  const {error}=await withTimeout(ensureSupabase().rpc('send_admin_client_message',{p_client_id:clientId,p_message:message}),12000,'Le serveur n’a pas répondu à l’envoi du message.');
   if(error)throw error;
   form?.reset();
   document.getElementById('admin-message-client').value=clientId;
@@ -1691,7 +1691,7 @@ async function saveContactSettings(event){event.preventDefault();try{const id=do
 
 /* ---------- ADMIN REFRESH ---------- */
 async function refreshAdmin(){if(!currentAdminContext)currentAdminContext=await requireAdmin();if(currentAdminContext.profile.role!=='admin')throw new Error('Accès administrateur refusé.');const results=await Promise.allSettled([loadAdminServices(),loadAdminClients(),loadAdminMessages(),loadSiteContent(),loadPublicServicesAdmin(),loadGalleryAdmin(),loadMethodAdmin(),loadContactSettings(),loadAdminClientMessageCount()]);const bad=results.filter(x=>x.status==='rejected');if(bad.length)console.warn('[ADMIN PARTIAL]',bad.map(x=>x.reason));}
-async function loadAdminClientMessageCount(){const {count,error}=await ensureSupabase().from('client_messages').select('id',{count:'exact',head:true});if(error)throw error;document.getElementById('stat-client-messages')?.replaceChildren(document.createTextNode(String(count||0)));}
+async function loadAdminClientMessageCount(){const {data,error}=await ensureSupabase().rpc('get_admin_client_message_count');if(error)throw error;document.getElementById('stat-client-messages')?.replaceChildren(document.createTextNode(String(data||0)));}
 
 /* ---------- REALTIME ---------- */
 async function startRealtime(user,isAdmin){const sb=ensureSupabase();if(serviceChannel){try{await sb.removeChannel(serviceChannel);}catch(_){}}if(messageChannel){try{await sb.removeChannel(messageChannel);}catch(_){}}serviceChannel=null;messageChannel=null;if(!user?.id)return;
