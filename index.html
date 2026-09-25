@@ -1467,7 +1467,7 @@ async function loadClientServices(){const box=document.getElementById('client-se
 async function createClientRequest(event){event?.preventDefault();try{const user=await getSessionUser();if(!user)throw new Error('Connectez-vous avant d’envoyer une demande.');const service_name=document.getElementById('client-request-service')?.value;const priority=document.getElementById('client-request-priority')?.value||'normal';const description=document.getElementById('client-request-description')?.value.trim();if(!service_name||!description)throw new Error('Choisissez un service et décrivez votre besoin.');const {error}=await ensureSupabase().from('service_requests').insert({client_id:user.id,service_name,description,priority,status:'Demande reçue',payment_status:'Non payé'});if(error)throw error;event.target.reset();setMessage('client-request-message','Votre demande a été envoyée. Le dossier est maintenant visible dans votre espace.',true);await loadClientServices();}catch(error){setMessage('client-request-message',clientErrorText(error));}}
 
 /* ---------- CLIENT MESSAGES ---------- */
-function renderMessage(x,currentUserId){const isAdmin=x.sender_id!==currentUserId;return `<div class="client-message ${isAdmin?'admin':'client'}"><small>${isAdmin?'Administration':'Vous'} · ${esc(formatDate(x.created_at))}</small><div style="white-space:pre-wrap">${esc(x.message||'')}</div></div>`;}
+function renderMessage(x,currentUserId){const isAdmin=x.sender_id!==currentUserId;return `<div class="client-message ${isAdmin?'admin':'client'}"><small>${isAdmin?'Administrateur':'Vous'} · ${esc(formatDate(x.created_at))}</small><div style="white-space:pre-wrap">${esc(x.message||'')}</div></div>`;}
 async function loadClientMessages(){const box=document.getElementById('client-message-list'),user=await getSessionUser();if(!box||!user)return;const {data,error}=await ensureSupabase().rpc('get_client_messages',{p_client_id:user.id});if(error){box.innerHTML=`<div class="empty">${esc(clientErrorText(error))}</div>`;return;}box.innerHTML=(data||[]).length?data.map(x=>renderMessage(x,user.id)).join(''):'<div class="empty">Aucun message.</div>';box.scrollTop=box.scrollHeight;}
 async function sendClientMessage(event){
  event?.preventDefault();
@@ -1558,7 +1558,7 @@ async function loadAdminClients(){const box=document.getElementById('adminClient
 
 /* ---------- ADMIN : MESSAGES ---------- */
 async function loadAdminMessages(){const box=document.getElementById('adminMessages');if(!box)return[];const {data,error}=await ensureSupabase().from('contact_messages').select('id,name,email,subject,message,is_read,created_at').order('created_at',{ascending:false});if(error){box.innerHTML=`<div class="empty">${esc(adminErrorText(error))}</div>`;throw error;}const rows=data||[];document.getElementById('stat-messages')?.replaceChildren(document.createTextNode(String(rows.length)));box.innerHTML=rows.length?rows.map(x=>`<div class="admin-service"><div class="admin-service-head"><div><strong>${esc(x.subject||'Message')}</strong><br><small>${esc(x.name||'')} — ${esc(x.email||'')}</small></div><small>${esc(formatDate(x.created_at))}</small></div><p style="white-space:pre-wrap">${esc(x.message||'')}</p></div>`).join(''):'<div class="empty">Aucun message.</div>';return rows;}
-async function loadAdminClientMessages(clientId){const box=document.getElementById('admin-client-message-list');if(!box)return;if(!clientId){box.innerHTML='<div class="empty">Sélectionnez un client.</div>';return;}const {data,error}=await ensureSupabase().rpc('get_admin_client_messages',{p_client_id:clientId});if(error){box.innerHTML=`<div class="empty">${esc(adminErrorText(error))}</div>`;return;}box.innerHTML=(data||[]).length?data.map(x=>renderMessage(x,currentAdminContext?.user?.id)).join(''):'<div class="empty">Aucun message.</div>';box.scrollTop=box.scrollHeight;}
+async function loadAdminClientMessages(clientId){const box=document.getElementById('admin-client-message-list');if(!box)return;if(!clientId){box.innerHTML='<div class="empty">Sélectionnez un client.</div>';return;}const [{data,error},{data:profile,error:profileError}]=await Promise.all([ensureSupabase().rpc('get_admin_client_messages',{p_client_id:clientId}),ensureSupabase().from('profiles').select('full_name,email').eq('id',clientId).maybeSingle()]);if(error){box.innerHTML=`<div class="empty">${esc(adminErrorText(error))}</div>`;return;}if(profileError)console.warn('[ADMIN CLIENT PROFILE]',profileError);const clientName=profile?.full_name||profile?.email||'Client';box.innerHTML=(data||[]).length?data.map(x=>renderMessage(x,currentAdminContext?.user?.id,clientName)).join(''):'<div class="empty">Aucun message.</div>';box.scrollTop=box.scrollHeight;}
 function selectAdminClient(id){selectedAdminClientId=id;const sel=document.getElementById('admin-message-client');if(sel)sel.value=id;switchAdminTab('messages');loadAdminClientMessages(id);}
 async function sendAdminClientMessage(event){
  event?.preventDefault();
@@ -1693,10 +1693,42 @@ async function saveContactSettings(event){event.preventDefault();try{const id=do
 async function refreshAdmin(){if(!currentAdminContext)currentAdminContext=await requireAdmin();if(currentAdminContext.profile.role!=='admin')throw new Error('Accès administrateur refusé.');const results=await Promise.allSettled([loadAdminServices(),loadAdminClients(),loadAdminMessages(),loadSiteContent(),loadPublicServicesAdmin(),loadGalleryAdmin(),loadMethodAdmin(),loadContactSettings(),loadAdminClientMessageCount()]);const bad=results.filter(x=>x.status==='rejected');if(bad.length)console.warn('[ADMIN PARTIAL]',bad.map(x=>x.reason));}
 async function loadAdminClientMessageCount(){const {data,error}=await ensureSupabase().rpc('get_admin_client_message_count');if(error)throw error;document.getElementById('stat-client-messages')?.replaceChildren(document.createTextNode(String(data||0)));}
 
+function showAdminRealtimeNotice(text){
+ const host=document.getElementById('admin-page')||document.body;
+ let notice=document.getElementById('admin-realtime-notice');
+ if(!notice){notice=document.createElement('div');notice.id='admin-realtime-notice';notice.className='app-message admin-success';notice.style.cssText='position:sticky;top:12px;z-index:20;margin:0 0 14px;padding:12px 14px;background:#eaf7ee;border:1px solid var(--ok);';host.prepend(notice);}
+ notice.textContent=text;
+ notice.style.display='block';
+ clearTimeout(window.__adminNoticeTimer);
+ window.__adminNoticeTimer=setTimeout(()=>{notice.style.display='none';},7000);
+}
+
 /* ---------- REALTIME ---------- */
+async function notifyAdminIncomingMessage(payload){
+  const row=payload?.new||payload?.record;
+  if(!row||!currentAdminContext?.user?.id||row.sender_id===currentAdminContext.user.id)return;
+  try{
+    const {data:client,error}=await ensureSupabase().from('profiles').select('full_name,email').eq('id',row.client_id).maybeSingle();
+    if(error)throw error;
+    const clientName=client?.full_name||client?.email||'Client inconnu';
+    const text=`Nouveau message de ${clientName}`;
+    const stat=document.getElementById('stat-client-messages');
+    if(stat){const n=Number(stat.textContent||0);stat.textContent=String(Number.isFinite(n)?n+1:1);}
+    let notice=document.getElementById('admin-realtime-message-notice');
+    if(!notice){
+      notice=document.createElement('div');notice.id='admin-realtime-message-notice';notice.className='app-message';
+      const host=document.querySelector('#admin-page .admin-page-head')||document.getElementById('admin-page');
+      host?.prepend(notice);
+    }
+    if(notice){notice.textContent=text;notice.style.display='block';}
+    if(typeof window.Notification==='function'&&Notification.permission==='granted')new Notification(text);
+    if(selectedAdminClientId===row.client_id)await loadAdminClientMessages(row.client_id);
+  }catch(error){console.error('[ADMIN MESSAGE NOTIFICATION]',error);}
+}
+
 async function startRealtime(user,isAdmin){const sb=ensureSupabase();if(serviceChannel){try{await sb.removeChannel(serviceChannel);}catch(_){}}if(messageChannel){try{await sb.removeChannel(messageChannel);}catch(_){}}serviceChannel=null;messageChannel=null;if(!user?.id)return;
  let sc=sb.channel(`service-requests-${user.id}-${isAdmin?'admin':'client'}`).on('postgres_changes',{event:'*',schema:'public',table:'service_requests',...(isAdmin?{}:{filter:`client_id=eq.${user.id}`})},()=>{if(isAdmin){clearTimeout(adminRefreshTimer);adminRefreshTimer=setTimeout(()=>refreshAdmin().catch(console.error),350);}else loadClientServices().catch(console.error);});serviceChannel=sc;sc.subscribe();
- let mc=sb.channel(`client-messages-${user.id}-${isAdmin?'admin':'client'}`).on('postgres_changes',{event:'*',schema:'public',table:'client_messages',...(isAdmin?{}:{filter:`client_id=eq.${user.id}`})},()=>{if(isAdmin){loadAdminClientMessages(selectedAdminClientId).catch(console.error);loadAdminClientMessageCount().catch(console.error);}else loadClientMessages().catch(console.error);});messageChannel=mc;mc.subscribe();}
+ let mc=sb.channel(`client-messages-${user.id}-${isAdmin?'admin':'client'}`).on('postgres_changes',{event:'*',schema:'public',table:'client_messages',...(isAdmin?{}:{filter:`client_id=eq.${user.id}`})},async(payload)=>{if(isAdmin){loadAdminClientMessages(selectedAdminClientId).catch(console.error);loadAdminClientMessageCount().catch(console.error);if(payload?.eventType==='INSERT'&&payload?.new?.sender_id&&payload.new.sender_id!==user.id){try{const {data:client}=await sb.from('profiles').select('full_name,email').eq('id',payload.new.client_id).maybeSingle();const name=client?.full_name||client?.email||'Client';showAdminRealtimeNotice(`Nouveau message de ${name}`);}catch(error){console.warn('[ADMIN MESSAGE NOTICE]',error);}}}else loadClientMessages().catch(console.error);});messageChannel=mc;mc.subscribe();}
 
 /* ---------- SESSION / LOGOUT ---------- */
 async function signOut(){
@@ -1748,11 +1780,11 @@ async function initializeSession(){
     return;
   }
   if(role==='admin'){
-    // Une session administrateur ne doit jamais être ouverte automatiquement dans l’espace client.
-    // Elle reste isolée derrière l’accès Administration.
-    await ensureSupabase().auth.signOut();
-    localStorage.removeItem('eh_space');
+    // Même connecté avec un compte administrateur, « Mon espace » reste réservé à l’espace client.
+    // Le panneau d’administration n’est accessible que par le mécanisme des 3 clics.
+    localStorage.setItem('eh_space','client');
     updateAuthUI();
+    go('login');
     return;
   }
   localStorage.setItem('eh_space','client');
@@ -2097,10 +2129,10 @@ if (authorized) {
       if(!data?.user) throw new Error("Utilisateur non retourné par le service.");
 
       const profile=await getMyProfile(data.user);
-      if(profile?.role==="admin"){
-        const admin=await getAdminContext(data.user);
-        currentAdminContext=admin;
-        await openAdminDashboard(admin);
+      if(String(profile?.role||'').toLowerCase()==='admin'){
+        // L’authentification générale ne doit jamais ouvrir le panneau admin.
+        // L’administration reste accessible uniquement après les 3 clics définis.
+        await showClientDashboard(data.user);
       }else{
         await showClientDashboard(data.user);
       }
