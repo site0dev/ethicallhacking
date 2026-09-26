@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://ethicallhacking.boiseo.online/sitemap.xml
